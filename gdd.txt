@@ -1,4 +1,4 @@
-=*= Reckless Pillager, a curses roguelike =*=
+=== Reckless Pillager, a curses roguelike ===
 
 
 In this game you play as a pillager, who stole the sword of the Last Emperor
@@ -14,4 +14,23 @@ to have some unusual magical abilities, that might aid you in your escape.
 The view is top down, and the player proceeds through a series of maze-like
 rooms. At first the player does not see the layout of the room, but it gets
 revealed to him as he proceeds. However, he does not see points of interest,
-loot or enemies unless he has line of sight to them.
+loot or enemies unless he has line of sight to them. The player has 3 stats:
+hp, mana and stamina, and 3 characteristics: strength, agility and intelligence.
+The loot that the hero may pick up, include: health potion, mana potion,
+key (of different types), stat upgrade crystal, char upgrade crystal. The 
+player may encounter enemies, and then the game switches to a turn based battle
+mode, where the player may choose between different types of attack moves,
+defensive moves, potions or spells, granted to him by the sword. Different moves
+scale from different characteristics. At the end of each room the hero can
+unlock one additional move. The enemies can also attack and defend, and use 
+spells and special moves. There are also 4 status effects: bleed, poison, stun
+and fatigue, which can persist for some time after a battle.
+There are also non-battle encounters with creatures and puzzles of the capital,
+which play out in the shape of dialogues.
+
+The goal of the game is to traverse a certain number of rooms, and leave the
+city alive.
+
+== Map ==
+The map of a room is a 20x20 ascii square with lines as borders, one entry and
+one exit.
