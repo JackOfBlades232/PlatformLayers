@@ -1,0 +1,17 @@
+=*= Reckless Pillager, a curses roguelike =*=
+
+
+In this game you play as a pillager, who stole the sword of the Last Emperor
+of the accursed capital from his grave, and is trying to escape the dead city.
+However, it seems that once you picked up the heirloom, the ghostly ruins came
+alive with illusions and monsters. Now, you will have to navigate through
+mazes, fight monsters and solve puzzles in order to escape with the prize. 
+Fortunately, the sword that you now wield is a grand weapon indeed, and seems
+to have some unusual magical abilities, that might aid you in your escape.
+
+== General description ==
+
+The view is top down, and the player proceeds through a series of maze-like
+rooms. At first the player does not see the layout of the room, but it gets
+revealed to him as he proceeds. However, he does not see points of interest,
+loot or enemies unless he has line of sight to them.
