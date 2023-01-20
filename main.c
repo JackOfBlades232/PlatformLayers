@@ -1,8 +1,13 @@
 /* RecklessPillager/prog.c */
+#include "src/engine.h"
+
 #include <stdio.h>
 
 int main()
 {
+    int status = -1;
     printf("From here, the game shall commence!\n");
-    return 0
+    
+    status = run();
+    return status;
 }

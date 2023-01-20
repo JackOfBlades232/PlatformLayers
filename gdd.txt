@@ -31,6 +31,76 @@ which play out in the shape of dialogues.
 The goal of the game is to traverse a certain number of rooms, and leave the
 city alive.
 
-== Map ==
-The map of a room is a 20x20 ascii square with lines as borders, one entry and
-one exit.
+== Map & Movement ==
+The map of a room is a NxN ascii square with lines as borders, one entry and
+one exit. Different symbols/colors mean different terrain types, items or 
+encounter types. The different terrain types are: plain ground (walkable), walls
+(impenetrable), water, fire, different liquids spilled on the ground giving
+various status effects, and void (where you can fall down into the abyss). 
+There are also static encounter and battle zones, which can be seen on the map.
+When the player enters such a zone, an encounter or a battle starts, and once
+it is finished, if the player is still alive, he well be returned to the same 
+spot. There are also doors and gates, which can be open or closed, loot items 
+scattered across the floor, traps, levers and switches 
+and there might be some special decorative non-interactive terrain elements. 
+At last, there are the entrance and the exit of the level.
+
+The hero takes up a 1x1 cell, and can move in all 4 directions. The hero only
+fully sees the objects that he has line of sight to (there is no view direction,
+so the hero view cone is 360 degrees), and all else is only seen as a fainter
+outline of the terrain. However, at the start of a room it is fully hidden by
+the for of war, and the hero has to see the terrain once for it's outlines to
+be memorized. The hero can cover 1 cell in X amount of time, but it can be
+decreased by high agility, and increased due to low stamina or a heavy load of
+loot. When the hero stands still, the time is considered frozen, and when he
+moves, it advances by the move duration.
+
+== Character stats ==
+As mentioned above, the character has hp, mp, stamina, strength, agility and
+intelligence. 
+
+HP is the amount of damage the player can take before dying. It
+can be diminished by taking damage from enemies and environmental hazards, and
+from status effects like bleed and poison. Some dialogue encounters can also 
+result in hp loss. The player can regain hp by drinking potions, progressing to
+the next room, using the healing spell or as a result of certain encounters.
+
+MP is the amount of mana the character has for using spells. It is diminished
+by using spells, debufs from enemies and by poisoning and fatigue, or by
+certain encounters. It can be replenished using mana potions and
+as a result of certain encounters.
+
+Stamina is the amount of strength the player has for performing physical 
+actions. It is diminished by using physical attacks, by status effects like
+bleed and fatigue, and as a result of certain encounters. It can also be
+decreased by spells. It can be replenished by resting and between levels.
+
+Strength is the level of the physical power of the character. It decreases the
+penalty to the speed from a heavy loot load, increases physical attack damage,
+especially for strength-based moves, increases the effectiveness of blocking
+moves, and reduces the probability of bleed and stun. It can also decrese the
+stamina cost of strength-based attacks.
+High levels of strength may also play a role in different encounters.
+
+Agitlity is the level of speed, nimbleness and skill of the character. It 
+increases the hit chance of the character's moves, especially the ag-based
+ones, decreases the chance of the character getting hit, and increases movement
+speed. It can also decrease the stamina cost of dex-based attacks. Again, high
+levels of agility may be useful in dialogue encounters.
+
+Intelligence if the level of magical skill and learnedness of the character. 
+It increases the spell damage, hit chance and cast chance, it decreases the 
+probability of being poisoned or cursed with fatigue. At high levels it can
+also decrease the mana cost of certain spells. Again, can be used in dialogues.
+
+HP, MP or Stamina caps can be increased upon finding a stat upgrade crystal
+(green one), and str, dex or int can be increased upon finding a char upgrade
+crystal (yellow one).
+
+== Inventory ==
+
+== Combat & Moves ==
+
+== Enemies ==
+
+== Dialogues ==
