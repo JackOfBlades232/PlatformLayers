@@ -6,8 +6,7 @@
 int main()
 {
     int status = -1;
-    printf("From here, the game shall commence!\n");
     
-    status = run();
+    status = run_game();
     return status;
 }

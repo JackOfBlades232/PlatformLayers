@@ -1,3 +1,8 @@
-/* RecklessPillager/engine.h */
+/* RecklessPillager/src/engine.h */
+#ifndef ENGINE_SENTRY
+#define ENGINE_SENTRY
 
-int run();
+int run_game();
+
+#endif 
+
