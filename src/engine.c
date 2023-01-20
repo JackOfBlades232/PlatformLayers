@@ -1,6 +1,8 @@
 /* RecklessPilager/src/engine.c */
+#include "engine.h"
 #include "map.h"
 #include "character.h"
+#include "utils.h"
 
 #include <curses.h>
 #include <stdio.h>
@@ -34,20 +36,27 @@ static int init_curses(term_state *t_state)
     return 0;
 }
 
-static int init_game(map **mp, character *c)
+static int init_game(const char *map_path, map **mp, character *c)
 {
     int status;
+    FILE *map_f;
 
-    status = init_curses(&t_state);
-    if (status != 0)
+    map_f = fopen_r(map_path);
+    if (!map_f) {
+        perror(map_path);
         return 1;
+    }
 
     *mp = create_map();
-    status = read_map_from_file(*mp, NULL);
+    status = read_map_from_file(*mp, map_f);
     if (status != 0)
         return 2;
 
     init_character(c, *mp);
+
+    status = init_curses(&t_state);
+    if (status != 0)
+        return 3;
 
     return 0;
 }
@@ -62,11 +71,15 @@ static void show_endgame_screen(const char *message)
 }
 
 /* test impl */
-int run_game()
+int run_game(const char *map_path)
 {
+    int status;
     map *m = NULL;
     character c;
-    init_game(&m, &c);
+
+    status = init_game(map_path, &m, &c);
+    if (status != 0)
+        goto deinitialization;
 
     draw_map(m, t_state.row, t_state.col);
     draw_character(&c);
@@ -109,5 +122,5 @@ int run_game()
 deinitialization:
     endwin();
     destroy_map(m);
-    return 0;
+    return status;
 }

@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-enum { map_size_x = 135, map_size_y = 37 };
+enum { map_size_x = 65, map_size_y = 19 };
 
 typedef enum tag_cell_type {
     floor, wall, water, fire, abyss, escape
@@ -17,6 +17,7 @@ typedef struct tag_map_cell {
 
 typedef struct tag_map {
     map_cell cells[map_size_y][map_size_x];
+    int entrance_x, entrance_y;
 } map;
 
 map_cell *map_cell_at(map *m, int x, int y);

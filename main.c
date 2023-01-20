@@ -3,10 +3,12 @@
 
 #include <stdio.h>
 
-int main()
+int main(int argc, char **argv)
 {
-    int status = -1;
-    
-    status = run_game();
-    return status;
+    if (argc < 2) {
+        fprintf(stderr, "Provide map file\n");
+        return 1;
+    }
+
+    return run_game(argv[1]);
 }

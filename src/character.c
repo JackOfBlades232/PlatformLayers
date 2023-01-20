@@ -7,8 +7,8 @@
 /* test impl */
 void init_character(character *c, map *m)
 {
-    c->cur_x = 1;
-    c->cur_y = 1;
+    c->cur_x = m->entrance_x;
+    c->cur_y = m->entrance_y;
     c->cur_cell = map_cell_at(m, c->cur_x, c->cur_y);
 }
 

@@ -10,3 +10,10 @@ int int_min(int a, int b)
 {
     return a < b ? a : b;
 }
+
+FILE *fopen_r(const char *path)
+{
+    FILE *f;
+    f = fopen(path, "r");
+    return f;
+}
