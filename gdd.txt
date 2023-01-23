@@ -99,8 +99,86 @@ crystal (yellow one).
 
 == Inventory ==
 
+There are no unique loot peices to be found, since all the environment seems to
+be trying to punish the thief, rather than reward him. However, throughout the 
+levels mana potions and health potions are scattered, and the hero can pick
+them up to his inventory. The hero can never carry more than X of each, but 
+the strength of the potions may increase from room to room. The hero can also
+pick up different keys, of which he can carry an unlimited amount, and they are
+listed by name in the inventory. The keys may be used for opening certain doors,
+and may break upon usage, break after a certain number of usages, or not break
+at all. Lastly, pseudo-keys can be found: these are items, that the hero can
+use in certain dialogue encounters (for example, a hero may find a ritual knife,
+then stumble upon an altar before a sealed gate, and use the knife to cut his
+hand and offer his blood as sacrifice, prompting the gates to open). These items
+are useless outside encounters. 
+
+The player constantly sees the amount of potions, that he has, and upon pressing
+I he can open the inventory menu, where one can scroll through all items and
+read descritions, if they are given.
+
 == Combat & Moves ==
+
+Example combat encounter look (hero vs one-eyed imp):
+
+     /    
+ o  /        <o> /
+ -->        ---\/  
+ |              \
+/ >            / \
+
+When the character enters combat, a window with the ascii drawings of the
+character and the enemy. Over their heads their health, mana, stamina and status
+effects are displayed. In another window below there is a menu of all 
+available moves, offensive, defensive, and magical (spells), which can be 
+offensive, defensive, or equivalent to item use. And, in another window below 
+this one, one can see the description of the highlighted move. The flow of the
+figth consists of rounds, and before each round both sides choose a move to
+perform or an item to use. On the right side of the combat widow a combat log
+is displayed.
+
+If both sides choose a defensive move, nothing really happens 
+(enemies just cautiously size each other up). If one chooses an offensive move,
+and the other chooses a defensive one, the defence will be considered a reaction
+to the offense, and they will play out simultaneously. If both sides choose an
+offensive move or to use an item, a roll-off (modified by the dexterity levels
+of the sides) will decide, who's move shall be executed first.
+
+Once the moves are chosen, slight animations are played depicting the moves and 
+reactions to them, the combat log is updated and the stats of the sides are
+updated. After that, if the combat has not ended, the next round starts.
+
+All physical moves use up stamina, all spells use up mana. The combat is
+finished in 2 cases:
+1) One of the sides loses all health, and dies
+2) The hero may try to escape combat, which takes up stamina and is not 
+    guaranteed
+
+If the enemy was defeated, the combat encounter zone ceases to exist.
+
+All the fights are 1v1, however, it is possible that a sequence of enemies 
+may attack the hero within one encounter, however the fights will be considered
+separate.
 
 == Enemies ==
 
+The enemies have the same kind of stats, characteristics and moves 
+(though some have unique moves, that the hero can never unlock), as the 
+hero, and behave symmetrically in combat, but are controlled by behaviour 
+scripts. These scripts can vary in complexity from a simple "spam one attack"
+for zombies and mindless beasts, to a more complex pattern, which takes into
+account the hero's current state and the moves that the hero previously
+performed in the fight, and could be used for a learned necromancer or a
+sophisticated demon. All enemies have a ascii avatar, and (hopefully) some
+animations for moves and reactions to come with it.
+
 == Dialogues ==
+
+The dialogues, like fights, also pop up as separate UI when triggered from the 
+map. However, here the structure is much simpler: there is a written description
+of what is happening, and below it a list of responses to choose from. Some
+responses may have requirements, like a minimal characteristic level, 
+a certain item in the inventory, or enough hp/mana/stamina. Some may also be
+probabilistic: the chance of success may not be 100%.
+
+The encouner may end in many different ways, depending on the design.
