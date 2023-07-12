@@ -2,6 +2,7 @@
 #include "engine.h"
 #include "map.h"
 #include "character.h"
+#include "game_view.h"
 #include "utils.h"
 
 #include <curses.h>
@@ -81,9 +82,7 @@ int run_game(const char *map_path)
     if (status != 0)
         goto deinitialization;
 
-    draw_map(m, t_state.row, t_state.col);
-    draw_character(&c);
-    refresh();
+    draw_game_view(m, &c, t_state.row, t_state.col);
 
     while ((t_state.key = getch()) != key_escape) {
         move_result move_res;
@@ -107,6 +106,7 @@ int run_game(const char *map_path)
 
         switch (move_res) {
             case none:
+                draw_game_view(m, &c, t_state.row, t_state.col);
                 break;
             case died:
                 show_endgame_screen("You died");

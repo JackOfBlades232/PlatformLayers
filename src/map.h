@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-enum { map_size_x = 65, map_size_y = 19 };
+enum { map_size_x = 260, map_size_y = 66 };
 
 typedef enum tag_cell_type {
     floor, wall, water, fire, abyss, escape
@@ -27,8 +27,5 @@ void destroy_map(map *m);
 int read_map_from_file(map *m, FILE *f);
 
 void clamp_map_xy(int *x, int *y);
-
-void draw_cell(const map *m, int x, int y);
-void draw_map(const map *m, int term_row, int term_col);
 
 #endif

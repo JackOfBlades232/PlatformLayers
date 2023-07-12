@@ -4,8 +4,6 @@
 
 #include "map.h"
 
-enum { character_glyph = '@' };
-
 typedef enum tag_move_dir { up, down, left, right } move_dir;
 
 typedef enum tag_move_result { none, died, escaped } move_result;
@@ -16,8 +14,6 @@ typedef struct tag_character {
 } character;
 
 void init_character(character *c, map *m);
-void draw_character(character *c);
-void hide_character(character *c);
 move_result move_character(character *c, move_dir dir, map *m);
 
 #endif

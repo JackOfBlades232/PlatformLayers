@@ -1,4 +1,4 @@
-=== Reckless Pillager, a curses roguelike ===
+=== Reckless Pillager, a roguelike ===
 
 
 In this game you play as a pillager, who stole the sword of the Last Emperor
@@ -32,8 +32,8 @@ The goal of the game is to traverse a certain number of rooms, and leave the
 city alive.
 
 == Map & Movement ==
-The map of a room is a NxN ascii square with lines as borders, one entry and
-one exit. Different symbols/colors mean different terrain types, items or 
+The map of a room is a rectangle of tiles with walls as borders, one entry and
+one exit. Different images mean different terrain types, items or 
 encounter types. The different terrain types are: plain ground (walkable), walls
 (impenetrable), water, fire, different liquids spilled on the ground giving
 various status effects, and void (where you can fall down into the abyss). 
@@ -127,7 +127,7 @@ Example combat encounter look (hero vs one-eyed imp):
  |              \
 / >            / \
 
-When the character enters combat, a window with the ascii drawings of the
+When the character enters combat, a window with the drawings of the
 character and the enemy. Over their heads their health, mana, stamina and status
 effects are displayed. In another window below there is a menu of all 
 available moves, offensive, defensive, and magical (spells), which can be 
@@ -144,7 +144,7 @@ to the offense, and they will play out simultaneously. If both sides choose an
 offensive move or to use an item, a roll-off (modified by the dexterity levels
 of the sides) will decide, who's move shall be executed first.
 
-Once the moves are chosen, slight animations are played depicting the moves and 
+Once the moves are chosen, animations are played depicting the moves and 
 reactions to them, the combat log is updated and the stats of the sides are
 updated. After that, if the combat has not ended, the next round starts.
 
@@ -169,7 +169,7 @@ scripts. These scripts can vary in complexity from a simple "spam one attack"
 for zombies and mindless beasts, to a more complex pattern, which takes into
 account the hero's current state and the moves that the hero previously
 performed in the fight, and could be used for a learned necromancer or a
-sophisticated demon. All enemies have a ascii avatar, and (hopefully) some
+sophisticated demon. All enemies have an avatar, and (hopefully) some
 animations for moves and reactions to come with it.
 
 == Dialogues ==

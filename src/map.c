@@ -101,24 +101,3 @@ void clamp_map_xy(int *x, int *y)
     if (*y >= map_size_y)
         *y = map_size_y - 1;
 }
-
-/* test impl */
-void draw_cell(const map *m, int x, int y)
-{
-    move(y, x);
-    addch(m->cells[y][x].glyph);
-}
-
-/* test impl */
-void draw_map(const map *m, int term_row, int term_col)
-{
-    int y, x;
-    int img_w, img_h;
-
-    img_w = int_min(map_size_x, term_col);
-    img_h = int_min(map_size_y, term_row);
-
-    for (y = 0; y < img_h; y++)
-        for (x = 0; x < img_w; x++)
-             draw_cell(m, x, y);
-}

@@ -12,18 +12,6 @@ void init_character(character *c, map *m)
     c->cur_cell = map_cell_at(m, c->cur_x, c->cur_y);
 }
 
-void draw_character(character *c)
-{
-    move(c->cur_y, c->cur_x);
-    addch(character_glyph);
-}
-
-void hide_character(character *c)
-{
-    move(c->cur_y, c->cur_x);
-    addch(c->cur_cell->glyph);
-}
-
 static void dir_to_dxdy(move_dir dir, int *dx, int *dy)
 {
     switch (dir) {
@@ -50,13 +38,9 @@ static move_result handle_new_cell(character *c,
 {
     switch (new_cell->type) {
         case floor: 
-            hide_character(c);
-
             c->cur_x = new_x;
             c->cur_y = new_y;
             c->cur_cell = new_cell;
-
-            draw_character(c);
             return none;
         case wall:
             return none;
@@ -65,10 +49,8 @@ static move_result handle_new_cell(character *c,
         case fire:
             return died;
         case escape:
-            hide_character(c);
             return escaped;
         case abyss:
-            hide_character(c);
             return died;
         default:
             return none;
