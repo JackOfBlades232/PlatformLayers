@@ -2,12 +2,12 @@ SRCMODULES = $(shell find src -type f -name '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall
-LFLAGS =
+LFLAGS = -lX11
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-game: main.c $(OBJMODULES)
+game: linux_main.c $(OBJMODULES)
 	$(CC) $(CFLAGS) $^ $(LFLAGS) -o $@
 
 ifneq (clean, $(MAKECMDGOALS))
