@@ -1,14 +1,7 @@
-/* RecklessPillager/prog.c */
-#include "src/engine.h"
-
+/* RecklessPillager/main.c */
 #include <stdio.h>
 
 int main(int argc, char **argv)
 {
-    if (argc < 2) {
-        fprintf(stderr, "Provide map file\n");
-        return 1;
-    }
-
-    return run_game(argv[1]);
+    printf("This ruinous city shall be thy grave, pillager!\n");
 }
