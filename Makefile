@@ -1,7 +1,7 @@
 SRCMODULES = $(shell find src -type f -name '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall # -O3
 LFLAGS = -lX11
 
 %.o: %.c %.h

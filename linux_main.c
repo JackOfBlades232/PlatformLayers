@@ -8,8 +8,10 @@
 #include <time.h>
 
 #include <X11/Xlib.h>
+#define XK_MISCELLANY
 #define XK_LATIN1
 #include <X11/keysymdef.h>
+// @TODO: add multiple kb layout support
 
 #define LOG_ERR(_fmt, ...) fprintf(stderr, "[ERR] (%s:%d: errno: %s) " _fmt "\n", \
         __FILE__, __LINE__, (errno == 0 ? "None" : strerror(errno)), ##__VA_ARGS__)
@@ -40,10 +42,11 @@ typedef int       bool;
 #define XStatus   Status
 
 enum input_key_mask_tag {
-    LEFT_KEY = 1,
-    RIGHT_KEY = 1 << 1,
-    UP_KEY = 1 << 2,
-    DOWN_KEY = 1 << 3
+    LEFT_KEY      = 1,
+    RIGHT_KEY     = 1 << 1,
+    UP_KEY        = 1 << 2,
+    DOWN_KEY      = 1 << 3,
+    ESC_KEY       = 1 << 4
 };
 
 typedef struct game_input_state_tag {
@@ -71,12 +74,13 @@ typedef struct XState_tag {
 // Global state
 static XState x_state = {0};
 
-static u32 back_buffer[GAME_VIEW_WIDTH*GAME_VIEW_HEIGHT] = {0};
-static game_input_state_t input_state                    = {0};
+// @TODO: make offscreen buffer a struct and allocate memory dynamically
+static u32 back_buffer[GAME_VIEW_WIDTH*GAME_VIEW_HEIGHT];
 
-static f32 delta_time = 0.;
+static game_input_state_t input_state  = {0};
+static f32 delta_time                  = 0.;
 
-// @TEST
+// @TEST Graphics
 #define OFFSET_PER_S 432
 
 static s32 x_offset  = 0;
@@ -94,6 +98,7 @@ s32 s32_wrap(s32 val, s32 min, s32 max)
     return val;
 }
 
+// @TODO: make offscreen buffer a passable param
 void fill_back_buffer()
 {
     const u32 square_size = 120;
@@ -174,32 +179,18 @@ u32 XPressedKeyMask(XKeyEvent *key_event)
 {
     KeySym ksym = XLookupKeysym(key_event, 0);
 
-    switch (ksym) {
-        case 'w':
-            return UP_KEY;
-        case 's':
-            return DOWN_KEY;
-        case 'd':
-            return RIGHT_KEY;
-        case 'a':
-            return LEFT_KEY;
-        default:
-            {
-                // @TODO: add correct arrows processing
-                switch (key_event->keycode) {
-                    case 111:
-                        return UP_KEY;
-                    case 116:
-                        return DOWN_KEY;
-                    case 114:
-                        return RIGHT_KEY;
-                    case 113:
-                        return LEFT_KEY;
-                    default:
-                        return 0;
-                }
-            }
-    }
+    if (ksym == XK_Escape)
+        return ESC_KEY;
+    else if (ksym == 'w' || ksym == XK_Up)
+        return UP_KEY;
+    else if (ksym == 's' || ksym == XK_Down)
+        return DOWN_KEY;
+    else if (ksym == 'd' || ksym == XK_Right)
+        return RIGHT_KEY;
+    else if (ksym == 'a' || ksym == XK_Left)
+        return LEFT_KEY;
+
+    return 0;
 }
 
 int XKeyWasTrulyReleased(XEvent *event)
@@ -231,10 +222,8 @@ void XPollEvents()
             case ClientMessage:
                 {
                     // @HUH: weird. Why is it in long data, not msg type?
-                    if ((Atom) event.xclient.data.l[0] == x_state.wm_delete_window) {
-                        printf("Shutting down\n");
+                    if ((Atom) event.xclient.data.l[0] == x_state.wm_delete_window)
                         input_state.quit = true;
-                    }
                 }
                 break;
 
@@ -254,6 +243,9 @@ void XPollEvents()
                 }
                 break;
         }
+
+        if (input_state.pressed_key_flags & ESC_KEY)
+            input_state.quit = true;
     }
 }
 
@@ -268,8 +260,10 @@ int main(int argc, char **argv)
         clock_t fstart = clock();
 
         XPollEvents();
-        if (input_state.quit)
-            goto deinit;
+        if (input_state.quit) {
+            printf("Shutting down\n");
+            break;
+        }
 
         update_back_buffer(); // @TEST
         XRedrawBuffer();
@@ -278,7 +272,6 @@ int main(int argc, char **argv)
         printf("%6.3f ms per frame\n", delta_time * 1000);
     }
 
-deinit:
     XDeinit();
     return 0;
 }

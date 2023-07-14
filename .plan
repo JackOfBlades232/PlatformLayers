@@ -3,7 +3,7 @@
 
 == Platform Layer Basics == 
 * X11 Blitting graphics (w/example)
-- X11 Processing input (w/example)
-- PulseAudio audi (w/example)
+* X11 Processing input (w/example)
+- PulseAudio audio (w/example)
 - Timer
 - Some logging
