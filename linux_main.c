@@ -6,6 +6,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <X11/Xlib.h>
 #define XK_MISCELLANY
@@ -17,10 +21,13 @@
         __FILE__, __LINE__, (errno == 0 ? "None" : strerror(errno)), ##__VA_ARGS__)
 
 #define ASSERT(_e) if(!(_e)) { fprintf(stderr, "Assertion failed at %s:%d\n", __FILE__, __LINE__); exit(1); }
-#define ASSERTF(_e, _fmt, ...) if(!(_e)) { fprintf(stderr, __VA_ARGS__); exit(1); }
+#define ASSERTF(_e, _fmt, ...) if(!(_e)) { fprintf(stderr, _fmt, ##__VA_ARGS__); exit(1); }
 #define ASSERT_ERR(_e) if(!(_e)) { LOG_ERR("Assertion failed at %s:%d\n", __FILE__, __LINE__); exit(1); }
 #define ASSERTF_ERR(_e, _fmt, ...) if(!(_e)) { LOG_ERR(_fmt, ##__VA_ARGS__); exit(1); }
 // @TODO: my own static assert
+
+#define MIN(a, b) (a < b ? a : b)
+#define MAX(a, b) (a > b ? a : b)
 
 typedef float     f32;
 typedef double    f64;
@@ -41,6 +48,15 @@ typedef int       bool;
 #define XFalse    False
 #define XStatus   Status
 
+typedef struct offscreen_buffer_tag {
+    u32 *bitmap_mem;
+    u32 width;
+    u32 height;
+    u32 bytes_per_pixel;
+    u32 pitch;
+    // @TODO: use visual's RGB mask values to populate pixel
+} offscreen_buffer_t;
+
 enum input_key_mask_tag {
     LEFT_KEY      = 1,
     RIGHT_KEY     = 1 << 1,
@@ -54,34 +70,32 @@ typedef struct game_input_state_tag {
     bool quit;
 } game_input_state_t;
 
-typedef struct XState_tag {
+typedef struct x11_state_tag {
     Display *display;
     Window w;
     GC gc;
     XImage *image;
 
     Atom wm_delete_window;
-} XState;
+} x11_state_t;
 
 // @TODO: find a way to resize properly (or fix resolution)
 // @TODO: find a way to check if x11 wants != 32 bits / pixel, and error thus
-// @TODO: use visual's RGB mask values to populate pixel
 // @TODO: Fix screen tearing when moving horizontally (double buffer?)
 
+// @TEST
 #define GAME_VIEW_WIDTH   1920
 #define GAME_VIEW_HEIGHT  1080
 
 // Global state
-static XState x_state = {0};
+static offscreen_buffer_t global_backbuffer  = {0};
+static game_input_state_t global_input_state = {0};
+static f32 delta_time                        = 0.;
 
-// @TODO: make offscreen buffer a struct and allocate memory dynamically
-static u32 back_buffer[GAME_VIEW_WIDTH*GAME_VIEW_HEIGHT];
-
-static game_input_state_t input_state  = {0};
-static f32 delta_time                  = 0.;
+static x11_state_t x11_state                 = {0};
 
 // @TEST Graphics
-#define OFFSET_PER_S 432
+#define OFFSET_PER_S 648
 
 static s32 x_offset  = 0;
 static s32 y_offset  = 0;
@@ -99,83 +113,94 @@ s32 s32_wrap(s32 val, s32 min, s32 max)
 }
 
 // @TODO: make offscreen buffer a passable param
-void fill_back_buffer()
+void render_gradient(offscreen_buffer_t *buffer, s32 x_offset, s32 y_offset)
 {
-    const u32 square_size = 120;
+    u32 width = buffer->width;
+    u32 height = buffer->height;
+    u32 pitch = buffer->pitch;
 
-    for (u32 y = 0; y < GAME_VIEW_HEIGHT; y++)
-        for (u32 x = 0; x < GAME_VIEW_WIDTH; x++) {
-            u32 *pix = back_buffer + y*GAME_VIEW_WIDTH + x;
-            u32 x_mod = s32_wrap(x + x_offset, 0, GAME_VIEW_WIDTH-1) % square_size;
-            u32 y_mod = s32_wrap(y + y_offset, 0, GAME_VIEW_HEIGHT-1) % square_size;
-            *pix = ((u32) 256.0*x_mod / square_size << 8) +
-                   ((u32) 256.0*y_mod / square_size);
+    u8 *row = (u8 *) buffer->bitmap_mem;
+    for (u32 y = 0; y < height; y++) {
+        u32 *pix = (u32 *) row;
+        for (u32 x = 0; x < width; x++) {
+            u8 blue = x + x_offset;
+            u8 green = y + y_offset;
+            *(pix++) = (green << 8) | blue;
         }
+
+        row += pitch;
+    }
 }
 
-void update_back_buffer()
+void update_gardient(offscreen_buffer_t *buffer, 
+                     game_input_state_t *input,
+                     s32 *x_offset, s32 *y_offset)
 {
     dx = 0;
     dy = 0;
-    if (input_state.pressed_key_flags & UP_KEY) dy -= OFFSET_PER_S;
-    if (input_state.pressed_key_flags & DOWN_KEY) dy += OFFSET_PER_S;
-    if (input_state.pressed_key_flags & RIGHT_KEY) dx += OFFSET_PER_S;
-    if (input_state.pressed_key_flags & LEFT_KEY) dx -= OFFSET_PER_S;
+    if (input->pressed_key_flags & UP_KEY) dy -= OFFSET_PER_S;
+    if (input->pressed_key_flags & DOWN_KEY) dy += OFFSET_PER_S;
+    if (input->pressed_key_flags & RIGHT_KEY) dx += OFFSET_PER_S;
+    if (input->pressed_key_flags & LEFT_KEY) dx -= OFFSET_PER_S;
 
-    x_offset += dx * delta_time;
-    y_offset += dy * delta_time;
-    fill_back_buffer();
+    // @BUG: on -O3 this seems to be optimized out to 0
+    s32 sdx = dx * delta_time;
+    s32 sdy = dy * delta_time;
+    *x_offset += sdx;
+    *y_offset += sdy;
+
+    render_gradient(buffer, *x_offset, *y_offset);
 }
 
 // @TEST END
 
-void XInit()
+void x11_init()
 {
-    x_state.display = XOpenDisplay(NULL);
-    ASSERT_ERR(x_state.display);
+    x11_state.display = XOpenDisplay(NULL);
+    ASSERT_ERR(x11_state.display);
 
-    int black_color = BlackPixel(x_state.display, DefaultScreen(x_state.display));
-    x_state.w = XCreateSimpleWindow(x_state.display, DefaultRootWindow(x_state.display),
+    int black_color = BlackPixel(x11_state.display, DefaultScreen(x11_state.display));
+    x11_state.w = XCreateSimpleWindow(x11_state.display, DefaultRootWindow(x11_state.display),
                                     0, 0, GAME_VIEW_WIDTH, GAME_VIEW_HEIGHT,
                                     0, black_color, black_color);
-    ASSERT_ERR(x_state.w);
+    ASSERT_ERR(x11_state.w);
 
     XWindowAttributes wa = {0};
-    XGetWindowAttributes(x_state.display, x_state.w, &wa);
+    XGetWindowAttributes(x11_state.display, x11_state.w, &wa);
 
-    x_state.image = XCreateImage(x_state.display, wa.visual, wa.depth, ZPixmap, 0,
-                                 (XPointer) back_buffer, 
-                                 GAME_VIEW_WIDTH, GAME_VIEW_HEIGHT,
-                                 32, GAME_VIEW_WIDTH * sizeof(*back_buffer));
-    ASSERT_ERR(x_state.image);
+    x11_state.image = XCreateImage(x11_state.display, wa.visual, wa.depth, ZPixmap, 0,
+                                 (XPointer) global_backbuffer.bitmap_mem, 
+                                 global_backbuffer.width, global_backbuffer.height,
+                                 32, global_backbuffer.width * sizeof(*global_backbuffer.bitmap_mem));
+    ASSERT_ERR(x11_state.image);
 
-    x_state.gc = XCreateGC(x_state.display, x_state.w, 0, NULL);
-    ASSERT_ERR(x_state.gc);
+    x11_state.gc = XCreateGC(x11_state.display, x11_state.w, 0, NULL);
+    ASSERT_ERR(x11_state.gc);
 
-    XSelectInput(x_state.display, x_state.w, KeyPressMask | KeyReleaseMask);
+    XSelectInput(x11_state.display, x11_state.w, KeyPressMask | KeyReleaseMask);
 
     // Intercept window manager window close event (since it is on the
     // level of the window manager, not the X system))
-    x_state.wm_delete_window = XInternAtom(x_state.display, "WM_DELETE_WINDOW", XFalse);
-    XStatus sr = XSetWMProtocols(x_state.display, x_state.w, &x_state.wm_delete_window, 1);
+    x11_state.wm_delete_window = XInternAtom(x11_state.display, "WM_DELETE_WINDOW", XFalse);
+    XStatus sr = XSetWMProtocols(x11_state.display, x11_state.w, &x11_state.wm_delete_window, 1);
     ASSERT_ERR(sr);
 
-    XMapWindow(x_state.display, x_state.w);
+    XMapWindow(x11_state.display, x11_state.w);
 }
 
-void XDeinit()
+void x11_deinit()
 {
-    XCloseDisplay(x_state.display);
+    XCloseDisplay(x11_state.display);
 }
 
-void XRedrawBuffer()
+void x11_redraw_buffer()
 {
-    XPutImage(x_state.display, x_state.w, x_state.gc, x_state.image,
+    XPutImage(x11_state.display, x11_state.w, x11_state.gc, x11_state.image,
               0, 0, 0, 0, GAME_VIEW_WIDTH, GAME_VIEW_HEIGHT);
-    XSync(x_state.display, XFalse);
+    XSync(x11_state.display, XFalse);
 }
 
-u32 XPressedKeyMask(XKeyEvent *key_event)
+u32 x11_key_mask(XKeyEvent *key_event)
 {
     KeySym ksym = XLookupKeysym(key_event, 0);
 
@@ -193,85 +218,106 @@ u32 XPressedKeyMask(XKeyEvent *key_event)
     return 0;
 }
 
-int XKeyWasTrulyReleased(XEvent *event)
+int x11_key_was_actually_released(XEvent *event)
 {
-    // @SPEED: should I remove this?
-    if (event->type != KeyRelease)
-        return 0;
+    ASSERTF(event->type == KeyRelease,
+            "x11_key_was_actually_released was called on a non-release event\n");
 
-    if (XPending(x_state.display) == 0)
+    if (XPending(x11_state.display) == 0)
         return 1;
 
-    // @SPEED: maybe I should remove the keypress too (if it is the repeated one)
     XEvent next_ev;
-    XPeekEvent(x_state.display, &next_ev);
-    return !(
+    XPeekEvent(x11_state.display, &next_ev);
+    if ( 
             next_ev.type == KeyPress && 
             next_ev.xkey.time == event->xkey.time &&
             next_ev.xkey.keycode == event->xkey.keycode
-            );
+       ) {
+        XNextEvent(x11_state.display, &next_ev);
+        return 0;
+    }
+
+    return 1;
 }
 
-void XPollEvents()
+void x11_poll_events()
 {
-    while (XPending(x_state.display) > 0) {
+    while (XPending(x11_state.display) > 0) {
         XEvent event = {0};
-        XNextEvent(x_state.display, &event);
+        XNextEvent(x11_state.display, &event);
 
         switch (event.type) {
             case ClientMessage:
                 {
                     // @HUH: weird. Why is it in long data, not msg type?
-                    if ((Atom) event.xclient.data.l[0] == x_state.wm_delete_window)
-                        input_state.quit = true;
+                    if ((Atom) event.xclient.data.l[0] == x11_state.wm_delete_window)
+                        global_input_state.quit = true;
                 }
                 break;
 
             case KeyPress: 
                 {
-                    input_state.pressed_key_flags |= 
-                        XPressedKeyMask(&event.xkey);
+                    global_input_state.pressed_key_flags |= 
+                        x11_key_mask(&event.xkey);
                 }
                 break;
 
             case KeyRelease: 
                 {
-                    if (XKeyWasTrulyReleased(&event)) {
-                        input_state.pressed_key_flags &= 
-                            ~XPressedKeyMask(&event.xkey);
+                    if (x11_key_was_actually_released(&event)) {
+                        global_input_state.pressed_key_flags &= 
+                            ~x11_key_mask(&event.xkey);
                     }
                 }
                 break;
         }
-
-        if (input_state.pressed_key_flags & ESC_KEY)
-            input_state.quit = true;
     }
 }
 
 int main(int argc, char **argv)
 {
-    XInit();
+    // @TEST
+    // @TODO: init struct according to visual and window dims
+    // @TODO: Move to another func
+    global_backbuffer.width = GAME_VIEW_WIDTH;
+    global_backbuffer.height = GAME_VIEW_HEIGHT;
+    global_backbuffer.bytes_per_pixel = 4;
+    global_backbuffer.pitch = global_backbuffer.width * global_backbuffer.bytes_per_pixel;
 
-    fill_back_buffer(); // @TEST
-    XRedrawBuffer();
+    u32 bufsize = global_backbuffer.height * global_backbuffer.pitch;
+    u32 pgs = getpagesize();
+    u32 pgbufsize = ((bufsize-1) / pgs + 1) * pgs;
+    global_backbuffer.bitmap_mem = mmap(NULL, pgbufsize, PROT_READ|PROT_WRITE,
+                                        MAP_PRIVATE|MAP_ANON, -1, 0);
+    ASSERT_ERR(global_backbuffer.bitmap_mem);
+
+    x11_init();
+
+    render_gradient(&global_backbuffer, x_offset, y_offset); // @TEST
+    x11_redraw_buffer();
 
     for (;;) {
         clock_t fstart = clock();
 
-        XPollEvents();
-        if (input_state.quit) {
+        x11_poll_events();
+        if (global_input_state.pressed_key_flags & ESC_KEY)
+            global_input_state.quit = true;
+
+        if (global_input_state.quit) {
             printf("Shutting down\n");
             break;
         }
 
-        update_back_buffer(); // @TEST
-        XRedrawBuffer();
+        update_gardient(&global_backbuffer, &global_input_state,
+                        &x_offset, &y_offset); // @TEST
+        x11_redraw_buffer();
 
         delta_time = ((f32) clock() - fstart) / CLOCKS_PER_SEC;
         printf("%6.3f ms per frame\n", delta_time * 1000);
     }
 
-    XDeinit();
+    x11_deinit();
+    // @TODO: Move to another func
+    munmap(global_backbuffer.bitmap_mem, pgbufsize);
     return 0;
 }
