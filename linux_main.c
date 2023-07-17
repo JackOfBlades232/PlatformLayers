@@ -17,7 +17,7 @@
 #define XK_LATIN1
 #include <X11/keysymdef.h>
 
-#include <alsa/asoundlib.h>
+#include <pulse/pulseaudio.h>
 
 #define LOG_STRERR(_func, _fmt, ...) fprintf(stderr, "[ERR] (%s:%d: errno: %s) " _fmt "\n", \
         __FILE__, __LINE__, (errno == 0 ? "None" : _func(errno)), ##__VA_ARGS__)
@@ -30,9 +30,6 @@
 #define ASSERT_LIBERR(_e, _libfunc) if(!(_e)) { LOG_STRERR(_libfunc, "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
 #define ASSERTF_LIBERR(_e, _libfunc, _fmt, ...) if(!(_e)) { LOG_STRERR(_libfunc, _fmt, ##__VA_ARGS__); exit(1); }
 // @TODO: my own static assert
-
-#define MIN(a, b) (a < b ? a : b)
-#define MAX(a, b) (a > b ? a : b)
 
 typedef float     f32;
 typedef double    f64;
@@ -280,78 +277,12 @@ void x11_poll_events()
 }
 
 // @TEST
-static snd_pcm_t *pcm;
-static u32 frame_size;
-static u32 buf_size;
-
-void alsa_snd_init()
+void pulse_init()
 {
-    char device_id[64] = "";
-    s32 pcm_open_res = -1;
-        
-    // Enumerate all cards & devices
-    s32 icard = -1;
-    for (;;) {
-        snd_card_next(&icard);
-        if (icard == -1)
-            break;
-
-        char scard[32];
-        snprintf(scard, sizeof(scard), "hw:%u", icard);
-
-        snd_ctl_t *sctl = NULL;
-        s32 open_res = snd_ctl_open(&sctl, scard, 0);
-        ASSERT_LIBERR(open_res == 0, snd_strerror); // @HUH ???
-
-        s32 idev = -1;
-        for (;;) {
-            s32 next_res = snd_ctl_pcm_next_device(sctl, &idev);
-            // ASSERT_LIBERR(next_res == 0, snd_strerror); // @HUH ???
-            if (next_res != 0 || idev == -1)
-                break;
-
-            snprintf(device_id, sizeof(device_id),
-                    "plughw:%u,%u", icard, idev);
-
-            s32 pcm_open_res = snd_pcm_open(&pcm, device_id, SND_PCM_STREAM_PLAYBACK, 0);
-            // ASSERT_LIBERR(pcm_open_res == 0, snd_strerror);
-            if (pcm_open_res == 0)
-                break;
-        }
-
-        snd_ctl_close(sctl);
-    }
-
-    ASSERT(*device_id != '\0');
-    ASSERT(pcm_open_res == 0);
-
-    // @TODO: add format testing/error checking (now, just 16/16 L/R)
-    snd_pcm_hw_params_t *params;
-    snd_pcm_hw_params_alloca(&params);
-    snd_pcm_hw_params_any(pcm, params);
-
-    snd_pcm_hw_params_set_access(pcm, params, SND_PCM_ACCESS_MMAP_INTERLEAVED);
-    snd_pcm_hw_params_set_format(pcm, params, SND_PCM_FORMAT_S16_LE);
-
-    // Guess here is where we check
-    u32 channels = 2;
-    snd_pcm_hw_params_set_channels_near(pcm, params, &channels);
-
-    u32 sample_rate = 48000;
-    snd_pcm_hw_params_set_rate_near(pcm, params, &sample_rate, NULL);
-
-    u32 buf_len_usec = 500 * 1000;
-    snd_pcm_hw_params_set_buffer_time_near(pcm, params, &buf_len_usec, NULL);
-
-    snd_pcm_hw_params(pcm, params);
-
-    frame_size = (16/8) * channels;
-    buf_size = sample_rate * frame_size * buf_len_usec / 1000000;
 }
 
-void alsa_snd_deinit()
+void pulse_deinit()
 {
-    snd_pcm_close(pcm);
 }
 
 int main(int argc, char **argv)
@@ -372,8 +303,6 @@ int main(int argc, char **argv)
     ASSERT_ERR(global_backbuffer.bitmap_mem);
 
     x11_init();
-    // @TEST
-    alsa_snd_init();
 
     render_gradient(&global_backbuffer, x_offset, y_offset); // @TEST
     x11_redraw_buffer();
@@ -397,9 +326,6 @@ int main(int argc, char **argv)
         delta_time = ((f32) clock() - fstart) / CLOCKS_PER_SEC;
         printf("%6.3f ms per frame\n", delta_time * 1000);
     }
-
-    // @TEST
-    alsa_snd_deinit();
 
     x11_deinit();
     // @TODO: Move to another func
