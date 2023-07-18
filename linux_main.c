@@ -19,8 +19,9 @@
 
 #include <pulse/pulseaudio.h>
 
-#define LOG_STRERR(_func, _fmt, ...) fprintf(stderr, "[ERR] (%s:%d: errno: %s) " _fmt "\n", \
-        __FILE__, __LINE__, (errno == 0 ? "None" : _func(errno)), ##__VA_ARGS__)
+#define LOG_STRERR_GEN(_func, _errno, _fmt, ...) fprintf(stderr, "[ERR] (%s:%d: errno: %s) " _fmt "\n", \
+        __FILE__, __LINE__, (errno == 0 ? "None" : _func(_errno)), ##__VA_ARGS__)
+#define LOG_STRERR(_func, _fmt, ...) LOG_STRERR_GEN(_func, errno, _fmt, ##__VA_ARGS__)
 #define LOG_ERR(_fmt, ...) LOG_STRERR(strerror, _fmt, ##__VA_ARGS__)
 
 #define ASSERT(_e) if(!(_e)) { fprintf(stderr, "Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); exit(1); }
@@ -29,6 +30,8 @@
 #define ASSERTF_ERR(_e, _fmt, ...) if(!(_e)) { LOG_ERR(_fmt, ##__VA_ARGS__); exit(1); }
 #define ASSERT_LIBERR(_e, _libfunc) if(!(_e)) { LOG_STRERR(_libfunc, "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
 #define ASSERTF_LIBERR(_e, _libfunc, _fmt, ...) if(!(_e)) { LOG_STRERR(_libfunc, _fmt, ##__VA_ARGS__); exit(1); }
+#define ASSERT_LIBERR_GEN(_e, _libfunc, _error) if(!(_e)) { LOG_STRERR_GEN(_libfunc, _error "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
+#define ASSERTF_LIBERR_GEN(_e, _libfunc, _error, _fmt, ...) if(!(_e)) { LOG_STRERR_GEN(_libfunc, _error, _fmt, ##__VA_ARGS__); exit(1); }
 // @TODO: my own static assert
 
 typedef float     f32;
@@ -81,9 +84,15 @@ typedef struct x11_state_tag {
     Atom wm_delete_window;
 } x11_state_t;
 
+// @TODO: add logging at required places + todos everywhere it is required
 // @TODO: find a way to resize properly (or fix resolution)
 // @TODO: find a way to check if x11 wants != 32 bits / pixel, and error thus
 // @TODO: Fix screen tearing when moving horizontally (double buffer?)
+
+// @HUH: I might be using asserts too much (in their basic form
+//      maybe just log somewhere?
+
+static const char app_name[] = "RecklessPillager";
 
 // @TEST
 #define GAME_VIEW_WIDTH   1920
@@ -277,12 +286,166 @@ void x11_poll_events()
 }
 
 // @TEST
-void pulse_init()
+static pa_threaded_mainloop *pulse_mloop;
+static pa_mainloop_api *pulse_mlapi;
+static pa_context *pulse_ctx;
+static pa_stream *pulse_stream;
+
+// @TODO: aggregate sound constants
+
+#define BUFFER_LEN_MS      500
+
+// @TEST @TEST
+//static char pulse_device_id[256];
+#define SQUARE_WAVE_PERIOD 48000/128
+#define SQUARE_WAVE_VOLUME 16000 
+
+// @TEST @TEST
+void pulse_fill_sound_buffer()
 {
+    static u32 square_wave_counter = 0;
+
+    pa_threaded_mainloop_lock(pulse_mloop);
+    {
+        size_t n;
+        if ((n = pa_stream_writable_size(pulse_stream)) == 0)
+            pa_threaded_mainloop_wait(pulse_mloop);
+        // @TODO: try and set another callback? now just catch SIGABRT
+        // @TODO: learn what is draining
+        // @TODO: not ok to do this on every frame
+
+        void *buf;
+        pa_stream_begin_write(pulse_stream, &buf, &n);
+        // @TODO: handle errors
+
+        s16 *sample_out = buf;
+        for (size_t i = 0; i < n/2; i++) { // @TODO: magic number BytesPerSample
+            if (square_wave_counter == 0)
+                square_wave_counter = SQUARE_WAVE_PERIOD;
+
+            s16 sample_val = square_wave_counter > SQUARE_WAVE_PERIOD/2 ? SQUARE_WAVE_VOLUME : -SQUARE_WAVE_VOLUME;
+            *(sample_out++) = sample_val;
+            *(sample_out++) = sample_val;
+        }
+
+        pa_stream_write(pulse_stream, buf, n, NULL, 0, PA_SEEK_RELATIVE);
+        // @TODO: handle errors
+    }
+    pa_threaded_mainloop_unlock(pulse_mloop);
+}
+
+void pulse_on_state_change(pa_context *c, void *udata)
+{
+    pa_threaded_mainloop_signal(pulse_mloop, 0);
+}
+
+/*
+void pulse_on_dev_sink(pa_context *c, const pa_sink_info *info, int eol, void *udata)
+{
+    if (eol != 0) {
+        pa_threaded_mainloop_signal(pulse_mloop, 0);
+        return;
+    }
+
+    // @TEST @TEST
+    strncpy(pulse_device_id, info->name, sizeof(pulse_device_id-1));
+}
+*/
+
+void pulse_on_io_complete(pa_stream *s, size_t nbytes, void *udata)
+{
+    pa_threaded_mainloop_signal(pulse_mloop, 0);
+}
+
+void pulse_init()
+{ 
+    u32 cd;
+
+    // @TODO: remake asserts to pulse's errno
+    pulse_mloop = pa_threaded_mainloop_new();
+    ASSERT(pulse_mloop);
+
+	cd = pa_threaded_mainloop_start(pulse_mloop);
+    ASSERT(cd == 0);
+
+    pa_threaded_mainloop_lock(pulse_mloop);
+    {
+        // Context connection
+        pulse_mlapi = pa_threaded_mainloop_get_api(pulse_mloop);
+        ASSERT(pulse_mlapi);
+
+        pulse_ctx = pa_context_new_with_proplist(pulse_mlapi, app_name, NULL);
+        ASSERT(pulse_ctx);
+
+        void *udata = NULL;
+        pa_context_set_state_callback(pulse_ctx, pulse_on_state_change, udata);
+
+        cd = pa_context_connect(pulse_ctx, NULL, 0, NULL);
+        ASSERT(cd == 0);
+
+        // @HUH: how exactly do the context, main loop thread and server interact?
+        while (pa_context_get_state(pulse_ctx) != PA_CONTEXT_READY)
+            pa_threaded_mainloop_wait(pulse_mloop);
+
+        // Enumerating devices (for playback)
+        /*
+        pa_operation *op;
+        op = pa_context_get_sink_info_list(pulse_ctx, pulse_on_dev_sink, udata);
+
+        // @HUH: Why the hell do I even need to enumerate devices?
+        u32 r;
+        for (;;) {
+            r = pa_operation_get_state(op);
+            if (r == PA_OPERATION_DONE || r == PA_OPERATION_CANCELLED)
+                break;
+            pa_threaded_mainloop_wait(pulse_mloop);
+        }
+        pa_operation_unref(op);
+        ASSERT(r == PA_OPERATION_DONE);
+
+        // @TEST @TEST
+        printf("=======[ Output Device ]=======\n");
+        printf("ID: %s\n", pulse_device_id);
+        printf("\n");
+        */
+
+
+        // Opening stream&buffer
+        pa_sample_spec spec;
+        spec.format = PA_SAMPLE_S16NE;
+        spec.rate = 48000;
+        spec.channels = 2;
+        pulse_stream = pa_stream_new(pulse_ctx, app_name, &spec, NULL);
+        ASSERT(pulse_stream);
+
+        pa_buffer_attr buf_attr;
+        memset(&buf_attr, 0xff, sizeof(buf_attr)); // all -1 == default
+        buf_attr.tlength = spec.rate * 16/8 * spec.channels * BUFFER_LEN_MS / 1000; // @HUH Refac?
+
+        pa_stream_set_write_callback(pulse_stream, pulse_on_io_complete, udata);
+        // @HUH: Should I choose a device more wisely?
+        cd = pa_stream_connect_playback(pulse_stream, NULL, &buf_attr, 0, NULL, NULL);
+        ASSERT(cd == 0);
+
+        pa_threaded_mainloop_wait(pulse_mloop);
+        ASSERT(pa_stream_get_state(pulse_stream) == PA_STREAM_READY);
+    }
+    pa_threaded_mainloop_unlock(pulse_mloop);
 }
 
 void pulse_deinit()
 {
+    pa_threaded_mainloop_lock(pulse_mloop);
+    {
+        pa_stream_disconnect(pulse_stream);
+        pa_stream_unref(pulse_stream);
+        pa_context_disconnect(pulse_ctx);
+        pa_context_unref(pulse_ctx);
+    }
+    pa_threaded_mainloop_unlock(pulse_mloop);
+    
+	pa_threaded_mainloop_stop(pulse_mloop);
+	pa_threaded_mainloop_free(pulse_mloop);
 }
 
 int main(int argc, char **argv)
@@ -303,9 +466,11 @@ int main(int argc, char **argv)
     ASSERT_ERR(global_backbuffer.bitmap_mem);
 
     x11_init();
+    pulse_init();
 
     render_gradient(&global_backbuffer, x_offset, y_offset); // @TEST
     x11_redraw_buffer();
+    pulse_fill_sound_buffer(); // @TEST
 
     for (;;) {
         clock_t fstart = clock();
@@ -322,11 +487,13 @@ int main(int argc, char **argv)
         update_gardient(&global_backbuffer, &global_input_state,
                         &x_offset, &y_offset); // @TEST
         x11_redraw_buffer();
+        pulse_fill_sound_buffer(); // @TEST
 
         delta_time = ((f32) clock() - fstart) / CLOCKS_PER_SEC;
-        printf("%6.3f ms per frame\n", delta_time * 1000);
+        //printf("%6.3f ms per frame\n", delta_time * 1000);
     }
 
+    pulse_deinit();
     x11_deinit();
     // @TODO: Move to another func
     munmap(global_backbuffer.bitmap_mem, pgbufsize);
