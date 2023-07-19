@@ -297,8 +297,9 @@ static pa_stream *pulse_stream;
 
 // @TEST @TEST
 //static char pulse_device_id[256];
-#define SQUARE_WAVE_PERIOD 48000/128
-#define SQUARE_WAVE_VOLUME 16000 
+//#define SQUARE_WAVE_PERIOD 48000/128
+#define SQUARE_WAVE_PERIOD 48000/256
+#define SQUARE_WAVE_VOLUME 4000 
 
 // @TEST @TEST
 void pulse_fill_sound_buffer()
@@ -308,11 +309,16 @@ void pulse_fill_sound_buffer()
     pa_threaded_mainloop_lock(pulse_mloop);
     {
         size_t n;
-        if ((n = pa_stream_writable_size(pulse_stream)) == 0)
-            pa_threaded_mainloop_wait(pulse_mloop);
-        // @TODO: try and set another callback? now just catch SIGABRT
+        if ((n = pa_stream_writable_size(pulse_stream)) == 0) {
+            //pa_threaded_mainloop_wait(pulse_mloop);
+            pa_threaded_mainloop_unlock(pulse_mloop);
+            return;
+        }
+
+        // @TODO: Fucking artifacts!
+
         // @TODO: learn what is draining
-        // @TODO: not ok to do this on every frame
+        // @TODO: not ok to do this on every frame?
 
         void *buf;
         pa_stream_begin_write(pulse_stream, &buf, &n);
@@ -326,6 +332,7 @@ void pulse_fill_sound_buffer()
             s16 sample_val = square_wave_counter > SQUARE_WAVE_PERIOD/2 ? SQUARE_WAVE_VOLUME : -SQUARE_WAVE_VOLUME;
             *(sample_out++) = sample_val;
             *(sample_out++) = sample_val;
+            square_wave_counter--;
         }
 
         pa_stream_write(pulse_stream, buf, n, NULL, 0, PA_SEEK_RELATIVE);
@@ -490,7 +497,7 @@ int main(int argc, char **argv)
         pulse_fill_sound_buffer(); // @TEST
 
         delta_time = ((f32) clock() - fstart) / CLOCKS_PER_SEC;
-        //printf("%6.3f ms per frame\n", delta_time * 1000);
+        printf("%6.3f ms per frame\n", delta_time * 1000);
     }
 
     pulse_deinit();
