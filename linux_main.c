@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sched.h>
 
 // @TODO: test speed with Pixmap and without 
 //  (it might influence the load on XOrg)
@@ -249,7 +250,7 @@ int main(int argc, char **argv)
     u64 prev_time = get_nsec();
 
     for (;;) {
-        // @TODO: check if shed_yield speeds anything up or reduces load
+        sched_yield();
         
         x11_poll_events();
 
