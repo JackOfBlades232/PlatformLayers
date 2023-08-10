@@ -19,13 +19,10 @@
 #include <fcntl.h>
 #include <sched.h>
 
-// @TODO: test speed with Pixmap and without 
-//  (it might influence the load on XOrg)
-
 // @TEST
-#define SCREEN_WIDTH  1920
-#define SCREEN_HEIGHT 1080
-static const char app_name[] = "Reckless Pillager";
+#define SCREEN_WIDTH  1280
+#define SCREEN_HEIGHT 720
+static char app_name[] = "Reckless Pillager";
 
 typedef struct offscreen_buffer_tag {
     u32 *bitmap_mem;
@@ -54,6 +51,7 @@ typedef struct x11_state_tag {
     Visual *visual;
     GC gc;
     int screen;
+    Pixmap pixmap;
     XImage *image;
 
     XClassHint *classhint;
@@ -120,6 +118,7 @@ void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt)
 // @IDEA: look at Casey's style and introduce local variables for less text
 void x11_init()
 {
+    // @TODO: factor out the 24-s and 32-s?
     x11_state.display = XOpenDisplay(getenv("DISPLAY"));
     ASSERT_ERR(x11_state.display);
 
@@ -157,6 +156,10 @@ void x11_init()
                  ExposureMask | KeyPressMask | KeyReleaseMask);
     XMapWindow(x11_state.display, x11_state.window);
 
+    x11_state.pixmap = XCreatePixmap(x11_state.display, x11_state.window, 
+                                     backbuffer.width, backbuffer.height, 24);
+    ASSERT_ERR(x11_state.pixmap);
+
     x11_state.image = XCreateImage(x11_state.display, x11_state.visual, 
                                    24, ZPixmap, 0, (char *)backbuffer.bitmap_mem, 
                                    backbuffer.width, backbuffer.height, 32, 0);
@@ -167,7 +170,7 @@ void x11_init()
 
 void x11_deinit()
 {
-    // @TODO: check if XImage is freed in XCloseDisplay
+    XFreePixmap(x11_state.display, x11_state.pixmap);
     XFree(x11_state.classhint);
     XFree(x11_state.wmhints);
     XFree(x11_state.sizehints);
@@ -217,11 +220,14 @@ void x11_poll_events()
     }
 }
 
-void x11_redraw_buffer()
+void x11_draw_buffer()
 {
-    XPutImage(x11_state.display, x11_state.window, 
+    XPutImage(x11_state.display, x11_state.pixmap, 
               x11_state.gc, x11_state.image,
-              0, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+              0, 0, 0, 0, x11_state.image->width, x11_state.image->height);
+    XCopyArea(x11_state.display, x11_state.pixmap, 
+              x11_state.window, x11_state.gc,
+              0, 0, backbuffer.width, backbuffer.height, 0, 0);
     XFlush(x11_state.display);
 }
 
@@ -270,8 +276,10 @@ int main(int argc, char **argv)
         if (input_state.quit)
             break;
 
+        // @TEST
         render_gradient(&backbuffer, x_offset, y_offset);
-        x11_redraw_buffer();
+
+        x11_draw_buffer();
     }
 
     x11_deinit();
