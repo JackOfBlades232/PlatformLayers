@@ -3,7 +3,7 @@ OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall -O0
 DEFS = -DUSE_ASSERTIONS=1
-LFLAGS = -lX11 -lpulse
+LFLAGS = -lX11 -lpulse -lm
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) $(DEFS) -c $< -o $@

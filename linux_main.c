@@ -7,21 +7,21 @@
 #define XK_LATIN
 #include <X11/keysymdef.h>
 
+#include <pulse/pulseaudio.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <math.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sched.h>
 
-// @TEST
-#define SCREEN_WIDTH  1280
-#define SCREEN_HEIGHT 720
 static char app_name[] = "Reckless Pillager";
 
 typedef struct offscreen_buffer_tag {
@@ -60,13 +60,42 @@ typedef struct x11_state_tag {
     Atom wm_delete_window;
 } x11_state_t;
 
+typedef struct pulse_state_tag {
+    pa_threaded_mainloop  *mloop;
+    pa_context            *ctx;
+    pa_stream             *stream;
+
+    u32 samples_per_sec;
+    u32 channels;
+    u32 bytes_per_sample;
+    u32 latency_sample_cnt;
+} pulse_state_t;
+
 static offscreen_buffer_t backbuffer = { 0 };
 static input_state_t input_state     = { 0 };
 
 static x11_state_t x11_state         = { 0 };
+static pulse_state_t pulse_state     = { 0 };
+
+// @TEST Controls
+typedef struct movement_input_tag {
+    f32 x, y;
+} movement_input_t;
+
+movement_input_t get_movement_input(input_state_t *input)
+{
+    movement_input_t movement = { 0 };
+    if (input->pressed_key_flags & VK_LEFT)  movement.x -= 1;
+    if (input->pressed_key_flags & VK_RIGHT) movement.x += 1;
+    if (input->pressed_key_flags & VK_UP)    movement.y -= 1;
+    if (input->pressed_key_flags & VK_DOWN)  movement.y += 1;
+
+    return movement;
+}
 
 // @TEST Graphics
-#define OFFSET_PER_S 648
+#define SCREEN_WIDTH  1280
+#define SCREEN_HEIGHT 720
 
 static f32 x_offset  = 0;
 static f32 y_offset  = 0;
@@ -104,16 +133,17 @@ void render_gradient(offscreen_buffer_t *buffer, f32 x_offset, f32 y_offset)
 
 void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt)
 {
-    dx = 0;
-    dy = 0;
-    if (input->pressed_key_flags & VK_UP)    dy -= OFFSET_PER_S;
-    if (input->pressed_key_flags & VK_DOWN)  dy += OFFSET_PER_S;
-    if (input->pressed_key_flags & VK_RIGHT) dx += OFFSET_PER_S;
-    if (input->pressed_key_flags & VK_LEFT)  dx -= OFFSET_PER_S;
+    const s32 offset_per_s = 648;
+
+    movement_input_t movement = get_movement_input(input);
+    dx = offset_per_s * movement.x;
+    dy = offset_per_s * movement.y;
 
     *x_offset += dx*dt;
     *y_offset += dy*dt;
 }
+
+/// X11 ///
 
 // @IDEA: look at Casey's style and introduce local variables for less text
 void x11_init()
@@ -231,6 +261,170 @@ void x11_draw_buffer()
     XFlush(x11_state.display);
 }
 
+/// Pulse Audio ///
+// @TODO: check errors with messages
+// @TODO: research locks -- where are they really needed?
+// @TODO: refac slightly
+
+// @TODO: fix direction change -- recalculate sine wave pos for smooth switch
+// @TODO: fix latency
+//    Read up, seems buffer size is more important, and the max_bytes does
+//    not do anything (maybe the buffer isn't circular?)
+
+// @TEST
+#define SOUND_SAMPLE_RATE       48000
+#define SOUND_IS_STEREO         true
+#define SOUND_BYTES_PER_CHANNEL 2
+#define SOUND_BUFFER_LEN_MS     500
+#define LATENCIES_PER_SEC       15
+
+// @HUH: this is pulseaudio-specific, this will have to become a pulse
+// function, and the logic shall be separated out
+void fill_pulse_buffer()
+{
+    enum wave_type_t { wt_square, wt_sine };
+
+    //enum wave_type_t wtype = wt_square;
+    const enum wave_type_t wtype = wt_sine;
+    const s16 wave_volume = 2000;
+
+    static u32 wave_counter = 0;
+
+    movement_input_t movement = get_movement_input(&input_state);
+    u32 wave_freq = 386 - 128*movement.y;
+    u32 wave_period = pulse_state.samples_per_sec/wave_freq;
+
+
+    // @NOTE: this may give us a lot of latency, thus we may want to write
+    // up to a certain amount (min(size, threshold))
+    size_t n;
+    if ((n = pa_stream_writable_size(pulse_state.stream)) == 0)
+        return;
+
+    u32 max_bytes = pulse_state.latency_sample_cnt * pulse_state.bytes_per_sample;
+    if (n > max_bytes) 
+        n = max_bytes;
+
+    pa_threaded_mainloop_lock(pulse_state.mloop);
+    {
+        u8 *buf;
+        pa_stream_begin_write(pulse_state.stream, &buf, &n);
+
+        s16 *sample_out = buf;
+        for (size_t i = 0; i < n/pulse_state.bytes_per_sample; i++) {
+            if (wave_counter == 0)
+                wave_counter = wave_period;
+
+            s16 sample_val = 0;
+            if (wtype == wt_square) {
+                sample_val = wave_counter > wave_period/2 ?
+                    wave_volume : -wave_volume;
+            } else if (wtype == wt_sine) {
+                sample_val = wave_volume *
+                    sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
+            }
+
+            *(sample_out++) = sample_val;
+            *(sample_out++) = sample_val;
+            wave_counter--;
+        }
+
+        pa_stream_write(pulse_state.stream, buf, n, NULL, 0, PA_SEEK_RELATIVE);
+    }
+    pa_threaded_mainloop_unlock(pulse_state.mloop);
+}
+
+void pulse_on_state_change(pa_context *ctx, void *udata)
+{
+    pa_threaded_mainloop_signal(pulse_state.mloop, 0);
+}
+
+void pulse_on_io_complete(pa_stream *stream, size_t nbytes, void *udata)
+{
+    pa_threaded_mainloop_signal(pulse_state.mloop, 0);
+}
+
+void pulse_on_op_complete(pa_stream *stream, int success, void *udata)
+{
+    pa_threaded_mainloop_signal(pulse_state.mloop, 0);
+}
+
+void pulse_init()
+{
+    pulse_state.samples_per_sec = SOUND_SAMPLE_RATE;
+    pulse_state.channels = SOUND_IS_STEREO ? 2 : 1;
+    pulse_state.bytes_per_sample = SOUND_BYTES_PER_CHANNEL * pulse_state.channels;
+    pulse_state.latency_sample_cnt = pulse_state.samples_per_sec / LATENCIES_PER_SEC;
+
+    pulse_state.mloop = pa_threaded_mainloop_new();
+    pa_threaded_mainloop_start(pulse_state.mloop);
+
+    pa_threaded_mainloop_lock(pulse_state.mloop);
+    {
+        // Context connection
+        pulse_state.ctx = pa_context_new_with_proplist(
+                pa_threaded_mainloop_get_api(pulse_state.mloop), 
+                app_name, NULL);
+
+        pa_context_set_state_callback(pulse_state.ctx, pulse_on_state_change, NULL);
+
+        pa_context_connect(pulse_state.ctx, NULL, 0, NULL);
+        while (pa_context_get_state(pulse_state.ctx) != PA_CONTEXT_READY)
+            pa_threaded_mainloop_wait(pulse_state.mloop);
+
+        // Opening stream&buffer
+        pa_sample_spec spec;
+        spec.format = PA_SAMPLE_S16NE;
+        spec.rate = pulse_state.samples_per_sec;
+        spec.channels = 2;
+        pulse_state.stream = pa_stream_new(pulse_state.ctx, app_name, &spec, NULL);
+
+        pa_buffer_attr buf_attr;
+        memset(&buf_attr, 0xff, sizeof(buf_attr)); // all -1 == default
+        buf_attr.tlength = 
+            spec.rate * pulse_state.bytes_per_sample * SOUND_BUFFER_LEN_MS / 1000;
+
+        pa_stream_set_write_callback(pulse_state.stream, pulse_on_io_complete, NULL);
+        pa_stream_connect_playback(pulse_state.stream, NULL, &buf_attr, 0, NULL, NULL);
+        for (;;) {
+            int res = pa_stream_get_state(pulse_state.stream);
+            if (res == PA_STREAM_READY)
+                break;
+            else if (res == PA_STREAM_FAILED) {
+                // @TODO: log err (assert)
+                break;
+            }
+
+            pa_threaded_mainloop_wait(pulse_state.mloop);
+        }
+    }
+    pa_threaded_mainloop_unlock(pulse_state.mloop);
+}
+
+void pulse_deinit()
+{
+	pa_operation *op = pa_stream_drain(pulse_state.stream, pulse_on_op_complete, NULL);
+    for (;;) {
+		int res = pa_operation_get_state(op);
+		if (res == PA_OPERATION_DONE || res == PA_OPERATION_CANCELLED)
+			break;
+		pa_threaded_mainloop_wait(pulse_state.mloop);
+	}
+    pa_operation_unref(op);
+
+    pa_threaded_mainloop_lock(pulse_state.mloop);
+    {
+        pa_stream_disconnect(pulse_state.stream);
+        pa_stream_unref(pulse_state.stream);
+        pa_context_disconnect(pulse_state.ctx);
+        pa_context_unref(pulse_state.ctx);
+    }
+    pa_threaded_mainloop_unlock(pulse_state.mloop);
+
+	pa_threaded_mainloop_stop(pulse_state.mloop);
+	pa_threaded_mainloop_free(pulse_state.mloop);
+}
+
 u64 get_nsec()
 {
     struct timespec ts = { 0 };
@@ -252,6 +446,10 @@ int main(int argc, char **argv)
                                  MAP_PRIVATE|MAP_ANON, -1, 0);
 
     x11_init();
+    pulse_init();
+
+    fill_pulse_buffer();
+    render_gradient(&backbuffer, x_offset, y_offset);
 
     u64 prev_time = get_nsec();
 
@@ -268,7 +466,7 @@ int main(int argc, char **argv)
         // @TODO: why should I make dt = const if dt > const?
 
         // @TEST
-        printf("%6.5fs per frame\n", dt);
+        //printf("%6.5fs per frame\n", dt);
         update_gardient(&input_state, &x_offset, &y_offset, dt);
 
         prev_time = cur_time;
@@ -277,11 +475,13 @@ int main(int argc, char **argv)
             break;
 
         // @TEST
+        fill_pulse_buffer();
         render_gradient(&backbuffer, x_offset, y_offset);
 
         x11_draw_buffer();
     }
 
+    pulse_deinit();
     x11_deinit();
     munmap(backbuffer.bitmap_mem, pgbufsize);
     return 0;
