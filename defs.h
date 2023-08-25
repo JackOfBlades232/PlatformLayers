@@ -27,13 +27,13 @@ typedef int       bool;
   #define _LOG_ERR(_fmt, ...) _LOG_STRERR(strerror, _fmt, ##__VA_ARGS__)
   
   #define ASSERT(_e) if(!(_e)) { fprintf(stderr, "Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); exit(1); }
-  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { fprintf(stderr, _fmt, ##__VA_ARGS__); exit(1); }
+  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { fprintf(stderr, "(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); exit(1); }
   #define ASSERT_ERR(_e) if(!(_e)) { _LOG_ERR("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); exit(1); }
   #define ASSERTF_ERR(_e, _fmt, ...) if(!(_e)) { _LOG_ERR(_fmt, ##__VA_ARGS__); exit(1); }
-  #define ASSERT_LIBERR(_e, _libfunc) if(!(_e)) { LOG_STRERR(_libfunc, "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
-  #define ASSERTF_LIBERR(_e, _libfunc, _fmt, ...) if(!(_e)) { LOG_STRERR(_libfunc, _fmt, ##__VA_ARGS__); exit(1); }
-  #define ASSERT_LIBERR_GEN(_e, _libfunc, _error) if(!(_e)) { LOG_STRERR_GEN(_libfunc, _error, "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
-  #define ASSERTF_LIBERR_GEN(_e, _libfunc, _error, _fmt, ...) if(!(_e)) { LOG_STRERR_GEN(_libfunc, _error, _fmt, ##__VA_ARGS__); exit(1); }
+  #define ASSERT_LIBERR(_e, _libfunc) if(!(_e)) { _LOG_STRERR(_libfunc, "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
+  #define ASSERTF_LIBERR(_e, _libfunc, _fmt, ...) if(!(_e)) { _LOG_STRERR(_libfunc, _fmt, ##__VA_ARGS__); exit(1); }
+  #define ASSERT_LIBERR_GEN(_e, _libfunc, _errno) if(!(_e)) { _LOG_STRERR_GEN(_libfunc, _errno, "Assertion (" #_e ") failed at %s:%d", __FILE__, __LINE__); exit(1); }
+  #define ASSERTF_LIBERR_GEN(_e, _libfunc, _errno, _fmt, ...) if(!(_e)) { _LOG_STRERR_GEN(_libfunc, _errno, _fmt, ##__VA_ARGS__); exit(1); }
   
   #define __ASSERT_GLUE(_a, _b) _a ## _b
   #define _ASSERT_GLUE(_a, _b) __ASSERT_GLUE(_a, _b)
