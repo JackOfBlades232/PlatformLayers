@@ -68,7 +68,6 @@ typedef struct pulse_state_tag {
     u32 samples_per_sec;
     u32 channels;
     u32 bytes_per_sample;
-    u32 latency_sample_cnt;
 } pulse_state_t;
 
 static offscreen_buffer_t backbuffer = { 0 };
@@ -148,7 +147,6 @@ void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt)
 // @IDEA: look at Casey's style and introduce local variables for less text
 void x11_init()
 {
-    // @TODO: factor out the 24-s and 32-s?
     x11_state.display = XOpenDisplay(getenv("DISPLAY"));
     ASSERT_ERR(x11_state.display);
 
@@ -266,17 +264,13 @@ void x11_draw_buffer()
 // @TODO: research locks -- where are they really needed?
 // @TODO: refac slightly
 
-// @TODO: fix direction change -- recalculate sine wave pos for smooth switch
-// @TODO: fix latency
-//    Read up, seems buffer size is more important, and the max_bytes does
-//    not do anything (maybe the buffer isn't circular?)
-
 // @TEST
 #define SOUND_SAMPLE_RATE       48000
 #define SOUND_IS_STEREO         true
 #define SOUND_BYTES_PER_CHANNEL 2
-#define SOUND_BUFFER_LEN_MS     500
+
 #define LATENCIES_PER_SEC       15
+#define SOUND_BUFFER_LEN_MS     1000/LATENCIES_PER_SEC
 
 // @HUH: this is pulseaudio-specific, this will have to become a pulse
 // function, and the logic shall be separated out
@@ -289,21 +283,19 @@ void fill_pulse_buffer()
     const s16 wave_volume = 2000;
 
     static u32 wave_counter = 0;
+    static u32 prev_wave_period = 0;
+
+    size_t n;
+    if ((n = pa_stream_writable_size(pulse_state.stream)) == 0)
+        return;
 
     movement_input_t movement = get_movement_input(&input_state);
     u32 wave_freq = 386 - 128*movement.y;
     u32 wave_period = pulse_state.samples_per_sec/wave_freq;
 
-
-    // @NOTE: this may give us a lot of latency, thus we may want to write
-    // up to a certain amount (min(size, threshold))
-    size_t n;
-    if ((n = pa_stream_writable_size(pulse_state.stream)) == 0)
-        return;
-
-    u32 max_bytes = pulse_state.latency_sample_cnt * pulse_state.bytes_per_sample;
-    if (n > max_bytes) 
-        n = max_bytes;
+    // Smooth tone switch
+    if (wave_period != prev_wave_period && prev_wave_period != 0)
+        wave_counter = (u32)((f32)wave_period * ((f32)wave_counter/prev_wave_period));
 
     pa_threaded_mainloop_lock(pulse_state.mloop);
     {
@@ -332,6 +324,8 @@ void fill_pulse_buffer()
         pa_stream_write(pulse_state.stream, buf, n, NULL, 0, PA_SEEK_RELATIVE);
     }
     pa_threaded_mainloop_unlock(pulse_state.mloop);
+
+    prev_wave_period = wave_period;
 }
 
 void pulse_on_state_change(pa_context *ctx, void *udata)
@@ -354,7 +348,6 @@ void pulse_init()
     pulse_state.samples_per_sec = SOUND_SAMPLE_RATE;
     pulse_state.channels = SOUND_IS_STEREO ? 2 : 1;
     pulse_state.bytes_per_sample = SOUND_BYTES_PER_CHANNEL * pulse_state.channels;
-    pulse_state.latency_sample_cnt = pulse_state.samples_per_sec / LATENCIES_PER_SEC;
 
     pulse_state.mloop = pa_threaded_mainloop_new();
     pa_threaded_mainloop_start(pulse_state.mloop);
