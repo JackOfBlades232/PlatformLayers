@@ -9,6 +9,9 @@
 
 #include <pulse/pulseaudio.h>
 
+// @NOTE: rdtsc only works with x86
+#include <x86intrin.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -467,6 +470,7 @@ int main(int argc, char **argv)
     render_gradient(&backbuffer, x_offset, y_offset);
 
     u64 prev_time = get_nsec();
+    u64 prev_clocks = __rdtsc();
 
     for (;;) {
         sched_yield();
@@ -474,18 +478,21 @@ int main(int argc, char **argv)
         x11_poll_events();
 
         u64 cur_time = get_nsec();
+        u64 cur_clocks = __rdtsc();
         if (cur_time == prev_time)
             continue;
 
         f32 dt = (f32)((f64)(cur_time - prev_time) * 1e-9);
-        // @TODO: why should I make dt = const if dt > const?
+        // @HUH: why should I make dt = const if dt > const? (was in testMIPT)
 
-        printf("%6.5fs per frame\n", dt);
+        printf("%.2fms/frame, %.2f fps, %lu clocks/frame\n",
+               dt*1e3, 1.0f/dt, cur_clocks - prev_clocks);
 
         // @TEST Graphics
         update_gardient(&input_state, &x_offset, &y_offset, dt);
 
         prev_time = cur_time;
+        prev_clocks = cur_clocks;
 
         if (input_state.quit)
             break;
