@@ -1,4 +1,4 @@
-/* RecklessPillager/Windows/defs.h */
+/* RecklessPillager/defs.h */
 #include <stdint.h>
 
 typedef float     f32;
