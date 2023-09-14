@@ -58,4 +58,7 @@ dkms.conf
 deps.mk
 
 # tags
-tags
+*/tags
+
+# visual studio
+.vs
