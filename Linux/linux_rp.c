@@ -25,7 +25,7 @@
 #include <fcntl.h>
 #include <sched.h>
 
-static char app_name[] = "Reckless Pillager";
+static const char app_name[] = "Reckless Pillager";
 
 typedef struct offscreen_buffer_tag {
     u32 *bitmap_mem;
