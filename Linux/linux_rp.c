@@ -104,16 +104,6 @@ static f32 y_offset  = 0;
 static f32 dx        = 0;
 static f32 dy        = 0;
 
-s32 s32_wrap(s32 val, s32 min, s32 max)
-{
-    u32 spread = max - min + 1;
-    while (val < min)
-        val += spread;
-    while (val > max)
-        val -= spread;
-    return val;
-}
-
 void render_gradient(offscreen_buffer_t *buffer, f32 x_offset, f32 y_offset)
 {
     u32 width = buffer->width;
@@ -485,11 +475,8 @@ int main(int argc, char **argv)
         f32 dt = (f32)((f64)(cur_time - prev_time) * 1e-9);
         // @HUH: why should I make dt = const if dt > const? (was in testMIPT)
 
-        printf("%.2fms/frame, %.2f fps, %lu clocks/frame\n",
+        printf("%.2f ms/frame, %.2f fps, %lu clocks/frame\n",
                dt*1e3, 1.0f/dt, cur_clocks - prev_clocks);
-
-        // @TEST Graphics
-        update_gardient(&input_state, &x_offset, &y_offset, dt);
 
         prev_time = cur_time;
         prev_clocks = cur_clocks;
@@ -498,6 +485,7 @@ int main(int argc, char **argv)
             break;
 
         // @TEST Graphics
+        update_gardient(&input_state, &x_offset, &y_offset, dt);
         render_gradient(&backbuffer, x_offset, y_offset);
 
         pulse_write_to_stream();
