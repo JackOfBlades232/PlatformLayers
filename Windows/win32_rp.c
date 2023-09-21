@@ -7,7 +7,6 @@
 #include <intrin.h>
 
 /* @TODO:
- *  Keyboard input test
  *  Sound test
  *  Abstract out
  */
@@ -21,14 +20,44 @@ typedef struct offscreen_buffer_tag {
     u32 pitch;
 } offscreen_buffer_t;
 
+enum input_key_mask_tag {
+    INPUT_KEY_LEFT  = 1,
+    INPUT_KEY_RIGHT = 1 << 1,
+    INPUT_KEY_UP    = 1 << 2,
+    INPUT_KEY_DOWN  = 1 << 3,
+    INPUT_KEY_ESC   = 1 << 4
+};
+
+typedef struct input_state_tag {
+    u32 pressed_key_flags;
+    bool quit;
+} input_state_t;
+
 static const LPCWSTR app_name = L"Reckless Pillager";
 
 // Global state
 static offscreen_buffer_t backbuffer = { 0 };
+static input_state_t input_state     = { 0 };
 
 static HWND window_handle = NULL;
 static HBITMAP bitmap_handle = NULL;
 static BITMAPINFO bmi = { 0 };
+
+// @TEST Controls
+typedef struct movement_input_tag {
+    f32 x, y;
+} movement_input_t;
+
+movement_input_t get_movement_input(input_state_t *input)
+{
+    movement_input_t movement = { 0 };
+    if (input->pressed_key_flags & INPUT_KEY_LEFT)  movement.x -= 1;
+    if (input->pressed_key_flags & INPUT_KEY_RIGHT) movement.x += 1;
+    if (input->pressed_key_flags & INPUT_KEY_UP)    movement.y -= 1;
+    if (input->pressed_key_flags & INPUT_KEY_DOWN)  movement.y += 1;
+
+    return movement;
+}
 
 // @TEST Graphics
 #define SCREEN_WIDTH 1280
@@ -58,13 +87,13 @@ void render_gradient(offscreen_buffer_t *buffer, f32 x_offset, f32 y_offset)
     }
 }
 
-// @TODO: insert controls
-void update_gardient(f32 *x_offset, f32 *y_offset, f32 dt)
+void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt)
 {
     const s32 offset_per_s = 648;
 
-    dx = offset_per_s * 1.0f;
-    dy = offset_per_s * 0.5f;
+    movement_input_t movement = get_movement_input(input);
+    dx = offset_per_s * movement.x;
+    dy = offset_per_s * movement.y;
 
     *x_offset += dx*dt;
     *y_offset += dy*dt;
@@ -94,7 +123,8 @@ void win32_resize_dib_section()
     bmi.bmiHeader.biCompression = BI_RGB;
     
     backbuffer.bitmap_mem = VirtualAlloc(NULL, backbuffer.byte_size,
-                                         MEM_COMMIT, PAGE_READWRITE);
+                                         MEM_RESERVE|MEM_COMMIT, 
+                                         PAGE_READWRITE);
 
     // @TEST Graphics
     render_gradient(&backbuffer, x_offset, y_offset);
@@ -118,6 +148,21 @@ win32_update_dib_section()
     ReleaseDC(window_handle, hdc);
 }
 
+u32 win32_key_mask(u32 vk_code)
+{
+    // @TODO: move mapping out of os layer
+    if (vk_code == VK_ESCAPE)
+        return INPUT_KEY_ESC;
+    else if (vk_code == 'W' || vk_code == VK_UP)
+        return INPUT_KEY_UP;
+    else if (vk_code == 'S' || vk_code == VK_DOWN)
+        return INPUT_KEY_DOWN;
+    else if (vk_code == 'D' || vk_code == VK_RIGHT)
+        return INPUT_KEY_RIGHT;
+    else if (vk_code == 'A' || vk_code == VK_LEFT)
+        return INPUT_KEY_LEFT;
+}
+
 LRESULT CALLBACK win32_window_handle_proc(HWND   hwnd, 
                                           UINT   u_msg, 
                                           WPARAM w_param, 
@@ -136,6 +181,14 @@ LRESULT CALLBACK win32_window_handle_proc(HWND   hwnd,
 
         case WM_DESTROY:
             PostQuitMessage(0);
+            return 0;
+
+        case WM_KEYDOWN:
+            input_state.pressed_key_flags |= win32_key_mask(w_param);
+            return 0;
+
+        case WM_KEYUP:
+            input_state.pressed_key_flags &= ~win32_key_mask(w_param);
             return 0;
 
         default:
@@ -165,8 +218,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
     ASSERT(window_handle);
     // n_cmd_show -- directive to min/max the win
     ShowWindow(window_handle, n_cmd_show);
-
-    // @TODO: add gradient test
 
     MSG msg = { 0 };
 
@@ -203,7 +254,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
                      dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             // @TEST Graphics
-            update_gardient(&x_offset, &y_offset, dt);
+            update_gardient(&input_state, &x_offset, &y_offset, dt);
             render_gradient(&backbuffer, x_offset, y_offset);
 
             win32_update_dib_section();
