@@ -20,6 +20,8 @@ typedef int       bool;
 #define true      1
 #define false     0
 
+#define M_PI 3.14159265359
+
 // Limited to 4kb
 void odprintf(const char* format, ...)
 {
