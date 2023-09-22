@@ -227,7 +227,8 @@ LRESULT CALLBACK win32_window_handle_proc(HWND   hwnd,
 /// WASAPI Audio ///
 
 // @TEST Sound
-void fill_audio_buffer(u8 *buf, u32 nbytes, u32 bytes_per_sample)
+// @TODO: remove planform-depentant stuff from here (linux too)
+void fill_audio_buffer(u8 *buf, u32 nbytes)
 {
     enum wave_type_t { wt_square, wt_sine };
 
@@ -252,7 +253,7 @@ void fill_audio_buffer(u8 *buf, u32 nbytes, u32 bytes_per_sample)
 
     // @TODO: account for the possibility of not 16-bit channels and not stereo
     s32 *sample_out = buf;
-    for (size_t i = 0; i < nbytes/bytes_per_sample; i++) {
+    for (size_t i = 0; i < nbytes/(wasapi_state.bytes_per_sample*wasapi_state.channels); i++) {
         if (wave_counter == 0)
             wave_counter = wave_period;
 
@@ -302,17 +303,21 @@ void wasapi_init()
     WAVEFORMATEX *wf;
 	IAudioClient_GetMixFormat(wasapi_state.client, &wf);
 
+    if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        WAVEFORMATEXTENSIBLE *wfx = (WAVEFORMATEXTENSIBLE *)wf;
+        // @TODO: do something with the formats!
+    }
+
     wasapi_state.samples_per_sec = wf->nSamplesPerSec;
     wasapi_state.channels = wf->nChannels;
     wasapi_state.bytes_per_sample = wf->wBitsPerSample/8;
 
     // Set up what we can -- mode and 
-    u32 buffer_length_msec = 66;
+    u32 buffer_length_msec = 500;
 	REFERENCE_TIME dur = buffer_length_msec * 1000 * 10; // in 100ns pieces
-	u32 mode = AUDCLNT_SHAREMODE_SHARED;
     // Set up buffer itself
-	IAudioClient_Initialize(wasapi_state.client, mode, 0,
-                            dur, dur, (void *)wf, NULL);
+	IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED, 0,
+                            dur, 0, wf, NULL);
     IAudioClient_GetBufferSize(wasapi_state.client, &wasapi_state.buf_frames);
 
     IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, 
@@ -355,8 +360,7 @@ void wasapi_write_to_stream()
     IAudioRenderClient_GetBuffer(wasapi_state.render, n_free_frames, &data);
     {
         // @TODO: what are frames? Seems like bytes*bps*channels
-        fill_audio_buffer(data, n_free_frames*wasapi_state.channels*wasapi_state.bytes_per_sample,
-                          wasapi_state.bytes_per_sample);
+        fill_audio_buffer(data, n_free_frames*wasapi_state.channels*wasapi_state.bytes_per_sample);
     }
 	IAudioRenderClient_ReleaseBuffer(wasapi_state.render, n_free_frames, 0);
 
