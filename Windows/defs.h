@@ -45,10 +45,12 @@ void odprintf(const char* format, ...)
     OutputDebugStringA(buf);
 }
 
+// @TODO: make assertions lirterally crash the program?
+
 #if defined(USE_ASSERTIONS) && USE_ASSERTIONS == 1
   
-  #define ASSERT(_e) if(!(_e)) { odprintf("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); PostQuitMessage(1); }
-  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { odprintf("(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); PostQuitMessage(1); }
+  #define ASSERT(_e) if(!(_e)) { odprintf("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); __debugbreak(); }
+  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { odprintf("(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); __debugbreak(); }
   
   #define __ASSERT_GLUE(_a, _b) _a ## _b
   #define _ASSERT_GLUE(_a, _b) __ASSERT_GLUE(_a, _b)

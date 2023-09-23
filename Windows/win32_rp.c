@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #define COBJMACROS
+#include <ksguid.h> // @HACK: this is the only way to unfuck KSDATAFORMAT I found
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 
@@ -53,6 +54,7 @@ typedef struct wasapi_state_tag {
     // @TEST
     bool started_playback;
     u32 buf_frames;
+    enum { wasapi_fmt_pcm, wasapi_fmt_ieee } format_type;
 } wasapi_state_t;
 
 static const LPCWSTR app_name = L"Reckless Pillager";
@@ -124,6 +126,7 @@ void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt)
 }
 
 /// Win32 ///
+// @TODO: check for errors in resize/update dib section?
 
 void win32_resize_dib_section()
 {
@@ -149,6 +152,7 @@ void win32_resize_dib_section()
     backbuffer.bitmap_mem = VirtualAlloc(NULL, backbuffer.byte_size,
                                          MEM_RESERVE|MEM_COMMIT, 
                                          PAGE_READWRITE);
+    ASSERT(backbuffer.bitmap_mem);
 
     // @TEST Graphics
     render_gradient(&backbuffer, x_offset, y_offset);
@@ -228,15 +232,20 @@ LRESULT CALLBACK win32_window_handle_proc(HWND   hwnd,
 
 // @TEST Sound
 // @TODO: remove planform-depentant stuff from here (linux too)
+// @IDEA: create my own buffer (16 2 channel) and copy to main buffer 
+//        with required format
 void fill_audio_buffer(u8 *buf, u32 nbytes)
 {
     enum wave_type_t { wt_square, wt_sine };
 
-    //enum wave_type_t wtype = wt_square;
+    //const enum wave_type_t wtype = wt_square;
     const enum wave_type_t wtype = wt_sine;
-    const s16 wave_volume = 2000;
     const u32 base_tone_hz = 384;
     const u32 offset_tone_hz = 128;
+
+    // @TODO: unify formats?
+    const s16 wave_volume_pcm = 2000;
+    const f32 wave_volume_ieee = 0.5f;
 
     static u32 wave_counter = 0;
     static u32 prev_wave_period = 0;
@@ -252,23 +261,45 @@ void fill_audio_buffer(u8 *buf, u32 nbytes)
     prev_wave_period = wave_period;
 
     // @TODO: account for the possibility of not 16-bit channels and not stereo
-    s32 *sample_out = buf;
-    for (size_t i = 0; i < nbytes/(wasapi_state.bytes_per_sample*wasapi_state.channels); i++) {
-        if (wave_counter == 0)
-            wave_counter = wave_period;
+    // @TODO: refac the float/int division
+    if (wasapi_state.format_type == wasapi_fmt_pcm) {
+        s32 *sample_out = buf;
+        for (size_t i = 0; i < nbytes/wasapi_state.bytes_per_sample; i++) {
+            if (wave_counter == 0)
+                wave_counter = wave_period;
 
-        s32 sample_val = 0;
-        if (wtype == wt_square) {
-            sample_val = wave_counter > wave_period/2 ?
-                wave_volume : -wave_volume;
-        } else if (wtype == wt_sine) {
-            sample_val = wave_volume *
-                sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
+            s32 sample_val = 0;
+            if (wtype == wt_square) {
+                sample_val = wave_counter > wave_period/2 ?
+                    wave_volume_pcm : -wave_volume_pcm;
+            } else if (wtype == wt_sine) {
+                sample_val = wave_volume_pcm *
+                    sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
+            }
+
+            *(sample_out++) = sample_val;
+            *(sample_out++) = sample_val;
+            wave_counter--;
         }
+    } else {
+        f32 *sample_out = buf;
+        for (size_t i = 0; i < nbytes/wasapi_state.bytes_per_sample; i++) {
+            if (wave_counter == 0)
+                wave_counter = wave_period;
 
-        *(sample_out++) = sample_val;
-        *(sample_out++) = sample_val;
-        wave_counter--;
+            f32 sample_val = 0;
+            if (wtype == wt_square) {
+                sample_val = wave_counter > wave_period/2 ?
+                    wave_volume_ieee : -wave_volume_ieee;
+            } else if (wtype == wt_sine) {
+                sample_val = wave_volume_ieee *
+                    sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
+            }
+
+            *(sample_out++) = sample_val;
+            *(sample_out++) = sample_val;
+            wave_counter--;
+        }
     }
 }
 
@@ -300,28 +331,54 @@ void wasapi_init()
     IMMDevice_Activate(wasapi_state.dev, &IID_IAudioClient, CLSCTX_ALL,
                        NULL, (void **) &wasapi_state.client);
 
-    WAVEFORMATEX *wf;
-	IAudioClient_GetMixFormat(wasapi_state.client, &wf);
 
-    if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-        WAVEFORMATEXTENSIBLE *wfx = (WAVEFORMATEXTENSIBLE *)wf;
-        // @TODO: do something with the formats!
-    }
+    WAVEFORMATEX *wf;
+    u32 res = IAudioClient_GetMixFormat(wasapi_state.client, &wf);
+    ASSERT(res == S_OK); 
+
+    if (wf->wFormatTag == WAVE_FORMAT_PCM)
+        wasapi_state.format_type = wasapi_fmt_pcm;
+    else if (wf->wFormatTag == WAVE_FORMAT_IEEE_FLOAT)
+        wasapi_state.format_type = wasapi_fmt_ieee;
+    else if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        WAVEFORMATEXTENSIBLE *wfx = wf;
+        /*
+        if (wfx->SubFormat == KSDATAFORMAT_SUBTYPE_PCM)
+            wasapi_state.format_type = wasapi_fmt_pcm;
+        else if (wfx->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)
+            wasapi_state.format_type = wasapi_fmt_ieee;
+            */
+        // @HACK: ugly shit, I do not like these guids))
+        // @TODO: check structs for equality
+        if (wfx->SubFormat.Data1 == 1)
+            wasapi_state.format_type = wasapi_fmt_pcm;
+        else if (wfx->SubFormat.Data1 == 3)
+            wasapi_state.format_type = wasapi_fmt_ieee;
+        else
+            ASSERTF(false, "Invalid wasapi extended wave format");
+    } else
+        ASSERTF(false, "Invalid wasapi wave format");
 
     wasapi_state.samples_per_sec = wf->nSamplesPerSec;
     wasapi_state.channels = wf->nChannels;
-    wasapi_state.bytes_per_sample = wf->wBitsPerSample/8;
+    wasapi_state.bytes_per_sample = wasapi_state.channels*wf->wBitsPerSample/8;
 
     // Set up what we can -- mode and 
-    u32 buffer_length_msec = 500;
+    u32 buffer_length_msec = 66;
 	REFERENCE_TIME dur = buffer_length_msec * 1000 * 10; // in 100ns pieces
-    // Set up buffer itself
-	IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED, 0,
-                            dur, 0, wf, NULL);
-    IAudioClient_GetBufferSize(wasapi_state.client, &wasapi_state.buf_frames);
 
-    IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, 
-                            (void **) &wasapi_state.render);
+    // Set up buffer itself
+	res = IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED, 0,
+                                  dur, 0, wf, NULL);
+    ASSERT(res == S_OK); 
+
+    res = IAudioClient_GetBufferSize(wasapi_state.client, 
+                                     &wasapi_state.buf_frames);
+    ASSERT(res == S_OK); 
+
+    res = IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, 
+                                  (void **) &wasapi_state.render);
+    ASSERT(res == S_OK); 
 
     wasapi_state.started_playback = false;
 
@@ -360,7 +417,7 @@ void wasapi_write_to_stream()
     IAudioRenderClient_GetBuffer(wasapi_state.render, n_free_frames, &data);
     {
         // @TODO: what are frames? Seems like bytes*bps*channels
-        fill_audio_buffer(data, n_free_frames*wasapi_state.channels*wasapi_state.bytes_per_sample);
+        fill_audio_buffer(data, n_free_frames * wasapi_state.bytes_per_sample);
     }
 	IAudioRenderClient_ReleaseBuffer(wasapi_state.render, n_free_frames, 0);
 
@@ -382,7 +439,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
     wc.lpfnWndProc = win32_window_handle_proc;
     wc.hInstance = h_instance;
     wc.lpszClassName = class_name;
-    RegisterClass(&wc);
+    ATOM rc_res = RegisterClass(&wc);
+    ASSERT(rc_res);
 
     window_handle = CreateWindowEx(0, class_name, app_name, WS_OVERLAPPEDWINDOW,
                                    0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 
