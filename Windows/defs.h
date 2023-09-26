@@ -45,6 +45,18 @@ void odprintf(const char* format, ...)
     OutputDebugStringA(buf);
 }
 
+bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        if (*s1 != *s2)
+            return false;
+        s1++;
+        s2++;
+    }
+    
+    return true;
+}
+
 // @TODO: make assertions lirterally crash the program?
 
 #if defined(USE_ASSERTIONS) && USE_ASSERTIONS == 1

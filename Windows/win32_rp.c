@@ -14,9 +14,9 @@
 #include <math.h>
 
 /* @TODO:
- *  Sound test
- *  Asserts and error checking
- *  Abstract out
+ *  Remake sound to 16-bit 2 channel buffer + copy
+ *  Abstract out the os layer
+ *  Tighten up the layer
  */
 
 typedef struct offscreen_buffer_tag {
@@ -41,20 +41,29 @@ typedef struct input_state_tag {
     bool quit;
 } input_state_t;
 
+typedef struct win32_state_tag {
+    HWND window;
+    HBITMAP bitmap;
+    BITMAPINFO bmi;
+} win32_state_t;
+
+typedef enum wasapi_stream_format_tag {
+    wasapi_fmt_pcm, 
+    wasapi_fmt_ieee 
+} wasapi_stream_format_t;
+
 typedef struct wasapi_state_tag {
     IAudioClient        *client;
     IAudioRenderClient  *render;
     IMMDevice           *dev;
-    IMMDeviceEnumerator *enumerator;
 
+    wasapi_stream_format_t format;
     u32 samples_per_sec;
     u32 channels;
+    u32 bytes_per_frame;
     u32 bytes_per_sample;
-    
-    // @TEST
-    bool started_playback;
     u32 buf_frames;
-    enum { wasapi_fmt_pcm, wasapi_fmt_ieee } format_type;
+    bool started_playback;
 } wasapi_state_t;
 
 static const LPCWSTR app_name = L"Reckless Pillager";
@@ -63,10 +72,7 @@ static const LPCWSTR app_name = L"Reckless Pillager";
 static offscreen_buffer_t backbuffer = { 0 };
 static input_state_t input_state     = { 0 };
 
-static HWND window_handle            = NULL;
-static HBITMAP bitmap_handle         = NULL;
-static BITMAPINFO bmi                = { 0 };
-
+static win32_state_t win32_state     = { 0 };
 static wasapi_state_t wasapi_state   = { 0 };
 
 // @TEST Controls
@@ -134,7 +140,7 @@ void win32_resize_dib_section()
         VirtualFree(backbuffer.bitmap_mem, backbuffer.byte_size, MEM_RELEASE);
 
     RECT client_rect;
-    GetClientRect(window_handle, &client_rect);
+    GetClientRect(win32_state.window, &client_rect);
 
     backbuffer.width = client_rect.right - client_rect.left;
     backbuffer.height  = client_rect.bottom - client_rect.top;
@@ -142,12 +148,12 @@ void win32_resize_dib_section()
     backbuffer.pitch = backbuffer.width * backbuffer.bytes_per_pixel;
     backbuffer.byte_size = backbuffer.pitch * backbuffer.height;
 
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = backbuffer.width;
-    bmi.bmiHeader.biHeight = -(s32)backbuffer.height; // top-down
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 8*backbuffer.bytes_per_pixel;
-    bmi.bmiHeader.biCompression = BI_RGB;
+    win32_state.bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    win32_state.bmi.bmiHeader.biWidth = backbuffer.width;
+    win32_state.bmi.bmiHeader.biHeight = -(s32)backbuffer.height; // top-down
+    win32_state.bmi.bmiHeader.biPlanes = 1;
+    win32_state.bmi.bmiHeader.biBitCount = 8*backbuffer.bytes_per_pixel;
+    win32_state.bmi.bmiHeader.biCompression = BI_RGB;
     
     backbuffer.bitmap_mem = VirtualAlloc(NULL, backbuffer.byte_size,
                                          MEM_RESERVE|MEM_COMMIT, 
@@ -161,19 +167,19 @@ void win32_resize_dib_section()
 win32_update_dib_section()
 {
     RECT client_rect;
-    GetClientRect(window_handle, &client_rect);
+    GetClientRect(win32_state.window, &client_rect);
     int window_width = client_rect.right - client_rect.left;
     int window_height = client_rect.bottom - client_rect.top;
 
-    HDC hdc = GetDC(window_handle);
+    HDC hdc = GetDC(win32_state.window);
     StretchDIBits(hdc,
                   0, 0, window_width, window_height,
                   0, 0, backbuffer.width, backbuffer.height,
                   backbuffer.bitmap_mem,
-                  &bmi,
+                  &win32_state.bmi,
                   DIB_RGB_COLORS,
                   SRCCOPY); 
-    ReleaseDC(window_handle, hdc);
+    ReleaseDC(win32_state.window, hdc);
 }
 
 u32 win32_key_mask(u32 vk_code)
@@ -193,10 +199,10 @@ u32 win32_key_mask(u32 vk_code)
     return 0;
 }
 
-LRESULT CALLBACK win32_window_handle_proc(HWND   hwnd, 
-                                          UINT   u_msg, 
-                                          WPARAM w_param, 
-                                          LPARAM l_param)
+LRESULT CALLBACK win32_window_proc(HWND   hwnd, 
+                                   UINT   u_msg, 
+                                   WPARAM w_param, 
+                                   LPARAM l_param)
 {
     switch (u_msg) {
         // Resize
@@ -232,8 +238,6 @@ LRESULT CALLBACK win32_window_handle_proc(HWND   hwnd,
 
 // @TEST Sound
 // @TODO: remove planform-depentant stuff from here (linux too)
-// @IDEA: create my own buffer (16 2 channel) and copy to main buffer 
-//        with required format
 void fill_audio_buffer(u8 *buf, u32 nbytes)
 {
     enum wave_type_t { wt_square, wt_sine };
@@ -244,8 +248,10 @@ void fill_audio_buffer(u8 *buf, u32 nbytes)
     const u32 offset_tone_hz = 128;
 
     // @TODO: unify formats?
-    const s16 wave_volume_pcm = 2000;
-    const f32 wave_volume_ieee = 0.5f;
+    const f32 wave_volume_pcm = 2000;
+    const f32 wave_volume_ieee = 0.25f;
+    const f32 wave_volume = wasapi_state.format == wasapi_fmt_pcm ?
+                            wave_volume_pcm : wave_volume_ieee;
 
     static u32 wave_counter = 0;
     static u32 prev_wave_period = 0;
@@ -260,54 +266,53 @@ void fill_audio_buffer(u8 *buf, u32 nbytes)
 
     prev_wave_period = wave_period;
 
-    // @TODO: account for the possibility of not 16-bit channels and not stereo
-    // @TODO: refac the float/int division
-    if (wasapi_state.format_type == wasapi_fmt_pcm) {
-        s32 *sample_out = buf;
-        for (size_t i = 0; i < nbytes/wasapi_state.bytes_per_sample; i++) {
-            if (wave_counter == 0)
-                wave_counter = wave_period;
+    s8 *sample_out = buf;
+    for (size_t i = 0; i < nbytes/wasapi_state.bytes_per_frame; i++) {
+        if (wave_counter == 0)
+            wave_counter = wave_period;
 
-            s32 sample_val = 0;
-            if (wtype == wt_square) {
-                sample_val = wave_counter > wave_period/2 ?
-                    wave_volume_pcm : -wave_volume_pcm;
-            } else if (wtype == wt_sine) {
-                sample_val = wave_volume_pcm *
-                    sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
-            }
-
-            *(sample_out++) = sample_val;
-            *(sample_out++) = sample_val;
-            wave_counter--;
+        f32 sample_val = 0;
+        if (wtype == wt_square) {
+            sample_val = wave_counter > wave_period/2 ?
+                wave_volume : -wave_volume;
+        } else if (wtype == wt_sine) {
+            sample_val = wave_volume *
+                sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
         }
-    } else {
-        f32 *sample_out = buf;
-        for (size_t i = 0; i < nbytes/wasapi_state.bytes_per_sample; i++) {
-            if (wave_counter == 0)
-                wave_counter = wave_period;
 
-            f32 sample_val = 0;
-            if (wtype == wt_square) {
-                sample_val = wave_counter > wave_period/2 ?
-                    wave_volume_ieee : -wave_volume_ieee;
-            } else if (wtype == wt_sine) {
-                sample_val = wave_volume_ieee *
-                    sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
-            }
+        // @TODO: factor out
+        if (wasapi_state.format == wasapi_fmt_pcm) {
+            if (wasapi_state.bytes_per_sample == 1)
+                *sample_out = sample_val;
+            else if (wasapi_state.bytes_per_sample == 2)
+                *((s16 *)sample_out) = sample_val;
+            else if (wasapi_state.bytes_per_sample == 4)
+                *((s32 *)sample_out) = sample_val;
+        } else if (wasapi_state.format == wasapi_fmt_ieee)
+            *((f32 *)sample_out) = sample_val;
+        sample_out += wasapi_state.bytes_per_sample;
 
-            *(sample_out++) = sample_val;
-            *(sample_out++) = sample_val;
-            wave_counter--;
+        if (wasapi_state.channels == 2) {
+            if (wasapi_state.format == wasapi_fmt_pcm) {
+                if (wasapi_state.bytes_per_sample == 1)
+                    *sample_out = sample_val;
+                else if (wasapi_state.bytes_per_sample == 2)
+                    *((s16 *)sample_out) = sample_val;
+                else if (wasapi_state.bytes_per_sample == 4)
+                    *((s32 *)sample_out) = sample_val;
+            } else if (wasapi_state.format == wasapi_fmt_ieee)
+                *((f32 *)sample_out) = sample_val;
+            sample_out += wasapi_state.bytes_per_sample;
         }
+
+        wave_counter--;
     }
 }
 
 void wasapi_init()
 {
-    // Shit for generic-like functions for COM library
     // @NOTE: sadly, no useful intrinsics for ids of interfaces, and this
-    //  might not be very good
+    //  might be bad if some ID changes
     const CLSID CLSID_MMDeviceEnumerator = {0xbcde0395, 0xe52f, 0x467c, {0x8e,0x3d, 0xc4,0x57,0x92,0x91,0x69,0x2e}};
     const IID IID_IMMDeviceEnumerator    = {0xa95664d2, 0x9614, 0x4f35, {0xa7,0x46, 0xde,0x8d,0xb6,0x36,0x17,0xe6}};
     const IID IID_IAudioClient           = {0x1cb9ad4c, 0xdbfa, 0x4c32, {0xb1,0x78, 0xc2,0xf5,0x68,0xa7,0x03,0xb2}};
@@ -317,13 +322,14 @@ void wasapi_init()
     CoInitializeEx(NULL, 0);
 
     // Create device enumerator
+    IMMDeviceEnumerator *enumerator;
     CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, 
                      &IID_IMMDeviceEnumerator, 
-                     (void **) &wasapi_state.enumerator);
+                     (void **) &enumerator);
 
     // Init the default device with the enumerator
     // eRender = playback, eConsole -- role indication (for games)
-    IMMDeviceEnumerator_GetDefaultAudioEndpoint(wasapi_state.enumerator, 
+    IMMDeviceEnumerator_GetDefaultAudioEndpoint(enumerator, 
                                                 eRender, eConsole, 
                                                 &wasapi_state.dev);
 
@@ -337,39 +343,48 @@ void wasapi_init()
     ASSERT(res == S_OK); 
 
     if (wf->wFormatTag == WAVE_FORMAT_PCM)
-        wasapi_state.format_type = wasapi_fmt_pcm;
+        wasapi_state.format = wasapi_fmt_pcm;
     else if (wf->wFormatTag == WAVE_FORMAT_IEEE_FLOAT)
-        wasapi_state.format_type = wasapi_fmt_ieee;
+        wasapi_state.format = wasapi_fmt_ieee;
     else if (wf->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
         WAVEFORMATEXTENSIBLE *wfx = wf;
-        /*
-        if (wfx->SubFormat == KSDATAFORMAT_SUBTYPE_PCM)
-            wasapi_state.format_type = wasapi_fmt_pcm;
-        else if (wfx->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)
-            wasapi_state.format_type = wasapi_fmt_ieee;
-            */
-        // @HACK: ugly shit, I do not like these guids))
-        // @TODO: check structs for equality
-        if (wfx->SubFormat.Data1 == 1)
-            wasapi_state.format_type = wasapi_fmt_pcm;
-        else if (wfx->SubFormat.Data1 == 3)
-            wasapi_state.format_type = wasapi_fmt_ieee;
-        else
+
+        if (structs_are_equal(&wfx->SubFormat,
+                              &KSDATAFORMAT_SUBTYPE_PCM, 
+                              sizeof(GUID)))
+        {
+            wasapi_state.format = wasapi_fmt_pcm;
+        } else if (structs_are_equal(&wfx->SubFormat, 
+                                     &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, 
+                                     sizeof(GUID)))
+        {
+            wasapi_state.format = wasapi_fmt_ieee;
+        } else
             ASSERTF(false, "Invalid wasapi extended wave format");
     } else
         ASSERTF(false, "Invalid wasapi wave format");
 
     wasapi_state.samples_per_sec = wf->nSamplesPerSec;
     wasapi_state.channels = wf->nChannels;
-    wasapi_state.bytes_per_sample = wasapi_state.channels*wf->wBitsPerSample/8;
+    wasapi_state.bytes_per_sample = wf->wBitsPerSample/8;
+    wasapi_state.bytes_per_frame = 
+        wasapi_state.channels*wasapi_state.bytes_per_sample;
+
+    // @TODO: handle format more softly? This is going to be done in shipping
+    ASSERTF(wasapi_state.channels == 1 || wasapi_state.channels == 2,
+            "Invalid wasapi wave format");
+    ASSERTF(wasapi_state.bytes_per_sample == 1 ||
+            wasapi_state.bytes_per_sample == 2 ||
+            wasapi_state.bytes_per_sample == 4,
+            "Invalid wasapi wave format");
 
     // Set up what we can -- mode and 
-    u32 buffer_length_msec = 66;
+    u32 buffer_length_msec = 500;
 	REFERENCE_TIME dur = buffer_length_msec * 1000 * 10; // in 100ns pieces
 
     // Set up buffer itself
-	res = IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED, 0,
-                                  dur, 0, wf, NULL);
+	res = IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED,
+                                  0, dur, 0, wf, NULL);
     ASSERT(res == S_OK); 
 
     res = IAudioClient_GetBufferSize(wasapi_state.client, 
@@ -383,26 +398,7 @@ void wasapi_init()
     wasapi_state.started_playback = false;
 
     CoTaskMemFree(wf);
-}
-
-void wasapi_deinit()
-{
-    // @NOTE: do we need to drain output buffer?
-    if (!wasapi_state.started_playback) {
-		IAudioClient_Start(wasapi_state.client);
-		wasapi_state.started_playback = true;
-	}
-
-    u32 filled;
-    do {
-        IAudioClient_GetCurrentPadding(wasapi_state.client, &filled);
-    } while (filled > 0);
-
-    IAudioRenderClient_Release(wasapi_state.render);
-    IAudioClient_Release(wasapi_state.client);
-    IMMDevice_Release(wasapi_state.dev);
-    IMMDeviceEnumerator_Release(wasapi_state.enumerator);
-    CoUninitialize();
+    IMMDeviceEnumerator_Release(enumerator);
 }
 
 void wasapi_write_to_stream()
@@ -413,11 +409,12 @@ void wasapi_write_to_stream()
     if (n_free_frames == 0)
         return;
 
+    // @TODO: we need to drop latency without making the buffer small.
+    //  For that, something like a play cursor pos is needed
     u8 *data;
     IAudioRenderClient_GetBuffer(wasapi_state.render, n_free_frames, &data);
     {
-        // @TODO: what are frames? Seems like bytes*bps*channels
-        fill_audio_buffer(data, n_free_frames * wasapi_state.bytes_per_sample);
+        fill_audio_buffer(data, n_free_frames * wasapi_state.bytes_per_frame);
     }
 	IAudioRenderClient_ReleaseBuffer(wasapi_state.render, n_free_frames, 0);
 
@@ -436,18 +433,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
     const LPCWSTR class_name = L"GameWindow";
 
     WNDCLASS wc = { 0 };
-    wc.lpfnWndProc = win32_window_handle_proc;
+    wc.lpfnWndProc = win32_window_proc;
     wc.hInstance = h_instance;
     wc.lpszClassName = class_name;
     ATOM rc_res = RegisterClass(&wc);
     ASSERT(rc_res);
 
-    window_handle = CreateWindowEx(0, class_name, app_name, WS_OVERLAPPEDWINDOW,
-                                   0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 
-                                   NULL, NULL, h_instance, NULL);
-    ASSERT(window_handle);
+    win32_state.window = CreateWindowEx(0, class_name, app_name, 
+                                        WS_OVERLAPPEDWINDOW,
+                                        0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 
+                                        NULL, NULL, h_instance, NULL);
+    ASSERT(win32_state.window);
     // n_cmd_show -- directive to min/max the win
-    ShowWindow(window_handle, n_cmd_show);
+    ShowWindow(win32_state.window, n_cmd_show);
 
     wasapi_init();
 
@@ -494,8 +492,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
         }
     }
 
-    wasapi_deinit();
-
-    // @TODO: deinit everything? Or just drop it for the OS
+    // @NOTE: the graphics/sound/mem is left for the OS
     return (int)msg.wParam;
 }
