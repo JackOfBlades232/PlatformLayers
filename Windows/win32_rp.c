@@ -14,9 +14,9 @@
 #include <math.h>
 
 /* @TODO:
- *  Remake sound to 16-bit 2 channel buffer + copy
  *  Abstract out the os layer
- *  Tighten up the layer
+ *      \\\ At this point a little game may be made \\\
+ *  Tighten up and go over todos
  */
 
 typedef struct offscreen_buffer_tag {
@@ -27,6 +27,12 @@ typedef struct offscreen_buffer_tag {
     u32 byte_size;
     u32 pitch;
 } offscreen_buffer_t;
+
+typedef struct sound_buffer_tag {
+    f32 *samples;
+    u32 samples_cnt;
+    u32 samples_per_sec;
+} sound_buffer_t;
 
 enum input_key_mask_tag {
     INPUT_KEY_LEFT  = 1,
@@ -60,9 +66,9 @@ typedef struct wasapi_state_tag {
     wasapi_stream_format_t format;
     u32 samples_per_sec;
     u32 channels;
-    u32 bytes_per_frame;
     u32 bytes_per_sample;
-    u32 buf_frames;
+    u32 bytes_per_channel;
+    u32 buf_samples;
     bool started_playback;
 } wasapi_state_t;
 
@@ -70,6 +76,7 @@ static const LPCWSTR app_name = L"Reckless Pillager";
 
 // Global state
 static offscreen_buffer_t backbuffer = { 0 };
+static sound_buffer_t sound_buffer   = { 0 };
 static input_state_t input_state     = { 0 };
 
 static win32_state_t win32_state     = { 0 };
@@ -237,8 +244,7 @@ LRESULT CALLBACK win32_window_proc(HWND   hwnd,
 /// WASAPI Audio ///
 
 // @TEST Sound
-// @TODO: remove planform-depentant stuff from here (linux too)
-void fill_audio_buffer(u8 *buf, u32 nbytes)
+void output_audio_tone(sound_buffer_t *sbuf, input_state_t *input)
 {
     enum wave_type_t { wt_square, wt_sine };
 
@@ -247,18 +253,14 @@ void fill_audio_buffer(u8 *buf, u32 nbytes)
     const u32 base_tone_hz = 384;
     const u32 offset_tone_hz = 128;
 
-    // @TODO: unify formats?
-    const f32 wave_volume_pcm = 2000;
-    const f32 wave_volume_ieee = 0.25f;
-    const f32 wave_volume = wasapi_state.format == wasapi_fmt_pcm ?
-                            wave_volume_pcm : wave_volume_ieee;
+    const f32 wave_volume = 0.25f;
 
     static u32 wave_counter = 0;
     static u32 prev_wave_period = 0;
 
-    movement_input_t movement = get_movement_input(&input_state);
+    movement_input_t movement = get_movement_input(input);
     u32 wave_freq = base_tone_hz - offset_tone_hz*movement.y;
-    u32 wave_period = wasapi_state.samples_per_sec/wave_freq;
+    u32 wave_period = sbuf->samples_per_sec/wave_freq;
 
     // Smooth tone switch
     if (wave_period != prev_wave_period && prev_wave_period != 0)
@@ -266,8 +268,8 @@ void fill_audio_buffer(u8 *buf, u32 nbytes)
 
     prev_wave_period = wave_period;
 
-    s8 *sample_out = buf;
-    for (size_t i = 0; i < nbytes/wasapi_state.bytes_per_frame; i++) {
+    f32 *sample_out = sbuf->samples;
+    for (u32 i = 0; i < sbuf->samples_cnt; i++) {
         if (wave_counter == 0)
             wave_counter = wave_period;
 
@@ -280,31 +282,8 @@ void fill_audio_buffer(u8 *buf, u32 nbytes)
                 sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
         }
 
-        // @TODO: factor out
-        if (wasapi_state.format == wasapi_fmt_pcm) {
-            if (wasapi_state.bytes_per_sample == 1)
-                *sample_out = sample_val;
-            else if (wasapi_state.bytes_per_sample == 2)
-                *((s16 *)sample_out) = sample_val;
-            else if (wasapi_state.bytes_per_sample == 4)
-                *((s32 *)sample_out) = sample_val;
-        } else if (wasapi_state.format == wasapi_fmt_ieee)
-            *((f32 *)sample_out) = sample_val;
-        sample_out += wasapi_state.bytes_per_sample;
-
-        if (wasapi_state.channels == 2) {
-            if (wasapi_state.format == wasapi_fmt_pcm) {
-                if (wasapi_state.bytes_per_sample == 1)
-                    *sample_out = sample_val;
-                else if (wasapi_state.bytes_per_sample == 2)
-                    *((s16 *)sample_out) = sample_val;
-                else if (wasapi_state.bytes_per_sample == 4)
-                    *((s32 *)sample_out) = sample_val;
-            } else if (wasapi_state.format == wasapi_fmt_ieee)
-                *((f32 *)sample_out) = sample_val;
-            sample_out += wasapi_state.bytes_per_sample;
-        }
-
+        *(sample_out++) = sample_val;
+        *(sample_out++) = sample_val;
         wave_counter--;
     }
 }
@@ -366,20 +345,20 @@ void wasapi_init()
 
     wasapi_state.samples_per_sec = wf->nSamplesPerSec;
     wasapi_state.channels = wf->nChannels;
-    wasapi_state.bytes_per_sample = wf->wBitsPerSample/8;
-    wasapi_state.bytes_per_frame = 
-        wasapi_state.channels*wasapi_state.bytes_per_sample;
+    wasapi_state.bytes_per_channel = wf->wBitsPerSample/8;
+    wasapi_state.bytes_per_sample = 
+        wasapi_state.channels*wasapi_state.bytes_per_channel;
 
     // @TODO: handle format more softly? This is going to be done in shipping
     ASSERTF(wasapi_state.channels == 1 || wasapi_state.channels == 2,
             "Invalid wasapi wave format");
-    ASSERTF(wasapi_state.bytes_per_sample == 1 ||
-            wasapi_state.bytes_per_sample == 2 ||
-            wasapi_state.bytes_per_sample == 4,
+    ASSERTF(wasapi_state.bytes_per_channel == 1 ||
+            wasapi_state.bytes_per_channel == 2 ||
+            wasapi_state.bytes_per_channel == 4,
             "Invalid wasapi wave format");
 
     // Set up what we can -- mode and 
-    u32 buffer_length_msec = 500;
+    u32 buffer_length_msec = 66;
 	REFERENCE_TIME dur = buffer_length_msec * 1000 * 10; // in 100ns pieces
 
     // Set up buffer itself
@@ -388,7 +367,7 @@ void wasapi_init()
     ASSERT(res == S_OK); 
 
     res = IAudioClient_GetBufferSize(wasapi_state.client, 
-                                     &wasapi_state.buf_frames);
+                                     &wasapi_state.buf_samples);
     ASSERT(res == S_OK); 
 
     res = IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, 
@@ -401,22 +380,64 @@ void wasapi_init()
     IMMDeviceEnumerator_Release(enumerator);
 }
 
-void wasapi_write_to_stream()
+u32 wasapi_get_free_samples_cnt()
 {
     u32 filled;
 	IAudioClient_GetCurrentPadding(wasapi_state.client, &filled);
-	u32 n_free_frames = wasapi_state.buf_frames - filled;
-    if (n_free_frames == 0)
-        return;
+	return wasapi_state.buf_samples - filled;
+}
 
+void wasapi_write_to_stream()
+{
     // @TODO: we need to drop latency without making the buffer small.
     //  For that, something like a play cursor pos is needed
     u8 *data;
-    IAudioRenderClient_GetBuffer(wasapi_state.render, n_free_frames, &data);
+    IAudioRenderClient_GetBuffer(wasapi_state.render, sound_buffer.samples_cnt, &data);
     {
-        fill_audio_buffer(data, n_free_frames * wasapi_state.bytes_per_frame);
+        // @NOTE: copying the universally-formated game sound buf to
+        // wasapi-specific format
+        const f32 pcm_volume_scale = 2000.0f;
+
+        // @TODO: this seems janky and potentially really slow
+        //  Maybe there should be more restrictions or different branches
+        s8 *sample_out = data;
+        for (u32 i = 0; i < sound_buffer.samples_cnt; i++) {
+            f32 sample_val_l = sound_buffer.samples[2*i];
+            f32 sample_val_r = sound_buffer.samples[2*i + 1];
+
+            if (wasapi_state.format == wasapi_fmt_pcm) {
+                sample_val_l *= pcm_volume_scale;
+                sample_val_r *= pcm_volume_scale;
+            }
+            if (wasapi_state.channels == 1)
+                sample_val_l = 0.5f*(sample_val_l + sample_val_r);
+
+            if (wasapi_state.format == wasapi_fmt_pcm) {
+                if (wasapi_state.bytes_per_channel == 1)
+                    *sample_out = sample_val_l;
+                else if (wasapi_state.bytes_per_channel == 2)
+                    *((s16 *)sample_out) = sample_val_l;
+                else if (wasapi_state.bytes_per_channel == 4)
+                    *((s32 *)sample_out) = sample_val_l;
+            } else if (wasapi_state.format == wasapi_fmt_ieee)
+                *((f32 *)sample_out) = sample_val_l;
+            sample_out += wasapi_state.bytes_per_channel;
+
+            if (wasapi_state.channels == 2) {
+                if (wasapi_state.format == wasapi_fmt_pcm) {
+                    if (wasapi_state.bytes_per_channel == 1)
+                        *sample_out = sample_val_r;
+                    else if (wasapi_state.bytes_per_channel == 2)
+                        *((s16 *)sample_out) = sample_val_r;
+                    else if (wasapi_state.bytes_per_channel == 4)
+                        *((s32 *)sample_out) = sample_val_r;
+                } else if (wasapi_state.format == wasapi_fmt_ieee)
+                    *((f32 *)sample_out) = sample_val_r;
+                sample_out += wasapi_state.bytes_per_channel;
+            }
+        }
     }
-	IAudioRenderClient_ReleaseBuffer(wasapi_state.render, n_free_frames, 0);
+	IAudioRenderClient_ReleaseBuffer(wasapi_state.render, sound_buffer.samples_cnt, 0);
 
     if (!wasapi_state.started_playback) {
 		IAudioClient_Start(wasapi_state.client);
@@ -448,6 +469,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
     ShowWindow(win32_state.window, n_cmd_show);
 
     wasapi_init();
+
+    sound_buffer.samples_per_sec = wasapi_state.samples_per_sec;
+    u32 sound_buffer_bytes = wasapi_state.buf_samples * 8;
+    sound_buffer.samples = VirtualAlloc(NULL, sound_buffer_bytes,
+                                        MEM_RESERVE|MEM_COMMIT, 
+                                        PAGE_READWRITE);
 
     MSG msg = { 0 };
 
@@ -483,6 +510,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             odprintf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
                      dt * 1e3, (u32)(1.0f/dt), dclocks);
 
+            sound_buffer.samples_cnt = wasapi_get_free_samples_cnt();
+
+            // @TEST Sound
+            output_audio_tone(&sound_buffer, &input_state);
+
             // @TEST Graphics
             update_gardient(&input_state, &x_offset, &y_offset, dt);
             render_gradient(&backbuffer, x_offset, y_offset);
@@ -492,6 +524,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
         }
     }
 
-    // @NOTE: the graphics/sound/mem is left for the OS
+    // @NOTE: the graphics/sound/mem deinit is left for the OS
     return (int)msg.wParam;
 }
