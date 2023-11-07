@@ -1,9 +1,1 @@
-== GDD ==
-- Create a gdd folder and factor it apart into files
 
-== Platform Layer Basics == 
-* X11 Blitting graphics (w/example)
-* X11 Processing input (w/example)
-- PulseAudio audio (w/example)
-- Timer
-- Some logging

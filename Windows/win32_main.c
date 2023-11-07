@@ -1,4 +1,4 @@
-﻿/* RecklessPillager/Windows/win32_rp.c */
+﻿/* RecklessPillager/Windows/win32_main.c */
 #include "defs.h"
 
 #include <windows.h>
