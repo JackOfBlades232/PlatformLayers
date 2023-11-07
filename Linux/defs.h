@@ -1,4 +1,4 @@
-/* RecklessPillager/Linux/defs.h */
+/* PlatformLayers/Linux/defs.h */
 #include <stdint.h>
 
 typedef float     f32;
@@ -16,7 +16,7 @@ typedef int       bool;
 #define true      1
 #define false     0
 
-#if defined(USE_ASSERTIONS) && USE_ASSERTIONS == 1
+#ifdef USE_ASSERTIONS
 
   #include <stdio.h>
   #include <errno.h>

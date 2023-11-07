@@ -1,4 +1,7 @@
-/* RecklessPillager/Windows/defs.h */
+/* PlatformLayers/Windows/defs.h */
+#ifndef DEFS_SENTRY
+#define DEFS_SENTRY
+
 #include <windows.h>
 
 #include <stdint.h>
@@ -23,7 +26,7 @@ typedef int       bool;
 #define M_PI 3.14159265359
 
 // Limited to 4kb
-void odprintf(const char* format, ...)
+void debug_printf(const char* format, ...)
 {
     char buf[4096];
     char* p = buf;
@@ -57,12 +60,15 @@ bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
     return true;
 }
 
-// @TODO: make assertions lirterally crash the program?
+#ifdef _DEBUG
+  #define USE_ASSERTIONS
+#endif
 
-#if defined(USE_ASSERTIONS) && USE_ASSERTIONS == 1
+// @TODO: make assertions literally crash the program?
+#ifdef USE_ASSERTIONS
   
-  #define ASSERT(_e) if(!(_e)) { odprintf("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); __debugbreak(); }
-  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { odprintf("(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); __debugbreak(); }
+  #define ASSERT(_e) if(!(_e)) { debug_printf("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); __debugbreak(); }
+  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { debug_printf("(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); __debugbreak(); }
   
   #define __ASSERT_GLUE(_a, _b) _a ## _b
   #define _ASSERT_GLUE(_a, _b) __ASSERT_GLUE(_a, _b)
@@ -73,5 +79,7 @@ bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
   #define ASSERT(_e)
   #define ASSERTF(_e, _fmt, ...)
   #define STATIC_ASSERT(_e)
+
+#endif
 
 #endif

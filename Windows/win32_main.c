@@ -1,4 +1,4 @@
-﻿/* RecklessPillager/Windows/win32_main.c */
+﻿/* PlatformLayers/Windows/win32_main.c */
 #include "defs.h"
 
 #include <windows.h>
@@ -14,9 +14,13 @@
 #include <math.h>
 
 /* @TODO:
- *  Abstract out the os layer
+ *  Abstract input keys
+ *  Mouse input
+ *  Audio latency fix
+ *  Basic API for game dev
  *      \\\ At this point a little game may be made \\\
  *  Tighten up and go over todos
+ *  ...
  */
 
 typedef struct offscreen_buffer_tag {
@@ -34,16 +38,50 @@ typedef struct sound_buffer_tag {
     u32 samples_per_sec;
 } sound_buffer_t;
 
-enum input_key_mask_tag {
-    INPUT_KEY_LEFT  = 1,
-    INPUT_KEY_RIGHT = 1 << 1,
-    INPUT_KEY_UP    = 1 << 2,
-    INPUT_KEY_DOWN  = 1 << 3,
-    INPUT_KEY_ESC   = 1 << 4
+enum input_spec_key_mask_tag {
+    INPUT_KEY_LEFT      = 1,
+    INPUT_KEY_RIGHT     = 1 << 1,
+    INPUT_KEY_UP        = 1 << 2,
+    INPUT_KEY_DOWN      = 1 << 3,
+    INPUT_KEY_SPACE     = 1 << 4,
+    INPUT_KEY_ESC       = 1 << 5,
+    INPUT_KEY_ENTER     = 1 << 6,
+    INPUT_KEY_TAB       = 1 << 7,
+    INPUT_KEY_LSHIFT    = 1 << 8,
+    INPUT_KEY_RSHIFT    = 1 << 9,
+    INPUT_KEY_LCTRL     = 1 << 10,
+    INPUT_KEY_RCTRL     = 1 << 11,
+    INPUT_KEY_LALT      = 1 << 12,
+    INPUT_KEY_RALT      = 1 << 13,
+    INPUT_KEY_BACKSPACE = 1 << 14,
+    INPUT_KEY_F1        = 1 << 15,
+    INPUT_KEY_F2        = 1 << 16,
+    INPUT_KEY_F3        = 1 << 17,
+    INPUT_KEY_F4        = 1 << 18,
+    INPUT_KEY_F5        = 1 << 19,
+    INPUT_KEY_F6        = 1 << 20,
+    INPUT_KEY_F7        = 1 << 21,
+    INPUT_KEY_F8        = 1 << 22,
+    INPUT_KEY_F9        = 1 << 23,
+    INPUT_KEY_F10       = 1 << 24,
+    INPUT_KEY_F11       = 1 << 25,
+    INPUT_KEY_F12       = 1 << 26,
 };
 
+// @TODO: move
+// @NOTE: this requires processed keyboard input with layout factored out
+inline u64 input_char_mask(char c)
+{
+    if (c >= '0' && c <= '9')
+        return 1 << (27 + c - '0');
+    else if (c >= 'a' && c <= 'z')
+        return 1 << (27 + ('9'-'0'+1) + c - 'a');
+    else
+        return 0;
+}
+
 typedef struct input_state_tag {
-    u32 pressed_key_flags;
+    u64 pressed_key_flags;
     bool quit;
 } input_state_t;
 
@@ -191,7 +229,7 @@ win32_update_dib_section()
 
 u32 win32_key_mask(u32 vk_code)
 {
-    // @TODO: move mapping out of os layer
+    // @TODO: remake to anonymous mapping vk -> input keys
     if (vk_code == VK_ESCAPE)
         return INPUT_KEY_ESC;
     else if (vk_code == 'W' || vk_code == VK_UP)
@@ -304,7 +342,7 @@ void wasapi_init()
     IMMDeviceEnumerator *enumerator;
     CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, 
                      &IID_IMMDeviceEnumerator, 
-                     (void **) &enumerator);
+                     (void **)&enumerator);
 
     // Init the default device with the enumerator
     // eRender = playback, eConsole -- role indication (for games)
@@ -314,7 +352,7 @@ void wasapi_init()
 
     // Create a buffer
     IMMDevice_Activate(wasapi_state.dev, &IID_IAudioClient, CLSCTX_ALL,
-                       NULL, (void **) &wasapi_state.client);
+                       NULL, (void **)&wasapi_state.client);
 
 
     WAVEFORMATEX *wf;
@@ -371,7 +409,7 @@ void wasapi_init()
     ASSERT(res == S_OK); 
 
     res = IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, 
-                                  (void **) &wasapi_state.render);
+                                  (void **)&wasapi_state.render);
     ASSERT(res == S_OK); 
 
     wasapi_state.started_playback = false;
@@ -507,7 +545,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             last_counter = end_counter;
             prev_clocks = cur_clocks;
 
-            odprintf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
+            debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
                      dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             sound_buffer.samples_cnt = wasapi_get_free_samples_cnt();
