@@ -1,4 +1,4 @@
-/* RecklessPillager/defs.h */
+/* RecklessPillager/Linux/defs.h */
 #include <stdint.h>
 
 typedef float     f32;

@@ -1,4 +1,4 @@
-/* RecklessPillager/linux_main.c */
+/* RecklessPillager/Linux/linux_main.c */
 #include "defs.h"
 
 #include <X11/Xlib.h>
@@ -25,7 +25,7 @@
 #include <fcntl.h>
 #include <sched.h>
 
-static char app_name[] = "Reckless Pillager";
+static const char app_name[] = "Reckless Pillager";
 
 typedef struct offscreen_buffer_tag {
     u32 *bitmap_mem;
@@ -36,11 +36,11 @@ typedef struct offscreen_buffer_tag {
 } offscreen_buffer_t;
 
 enum input_key_mask_tag {
-    VK_LEFT  = 1,
-    VK_RIGHT = 1 << 1,
-    VK_UP    = 1 << 2,
-    VK_DOWN  = 1 << 3,
-    VK_ESC   = 1 << 4
+    INPUT_KEY_LEFT  = 1,
+    INPUT_KEY_RIGHT = 1 << 1,
+    INPUT_KEY_UP    = 1 << 2,
+    INPUT_KEY_DOWN  = 1 << 3,
+    INPUT_KEY_ESC   = 1 << 4
 };
 
 typedef struct input_state_tag {
@@ -87,10 +87,10 @@ typedef struct movement_input_tag {
 movement_input_t get_movement_input(input_state_t *input)
 {
     movement_input_t movement = { 0 };
-    if (input->pressed_key_flags & VK_LEFT)  movement.x -= 1;
-    if (input->pressed_key_flags & VK_RIGHT) movement.x += 1;
-    if (input->pressed_key_flags & VK_UP)    movement.y -= 1;
-    if (input->pressed_key_flags & VK_DOWN)  movement.y += 1;
+    if (input->pressed_key_flags & INPUT_KEY_LEFT)  movement.x -= 1;
+    if (input->pressed_key_flags & INPUT_KEY_RIGHT) movement.x += 1;
+    if (input->pressed_key_flags & INPUT_KEY_UP)    movement.y -= 1;
+    if (input->pressed_key_flags & INPUT_KEY_DOWN)  movement.y += 1;
 
     return movement;
 }
@@ -103,16 +103,6 @@ static f32 x_offset  = 0;
 static f32 y_offset  = 0;
 static f32 dx        = 0;
 static f32 dy        = 0;
-
-s32 s32_wrap(s32 val, s32 min, s32 max)
-{
-    u32 spread = max - min + 1;
-    while (val < min)
-        val += spread;
-    while (val > max)
-        val -= spread;
-    return val;
-}
 
 void render_gradient(offscreen_buffer_t *buffer, f32 x_offset, f32 y_offset)
 {
@@ -212,17 +202,17 @@ u32 x11_key_mask(XKeyEvent *key_event)
 {
     KeySym ksym = XLookupKeysym(key_event, 0);
 
-    // @HUH: should I move the WASD=arrows logic to upper layers?
+    // @TODO: move mapping out of os layer
     if (ksym == XK_Escape)
-        return VK_ESC;
+        return INPUT_KEY_ESC;
     else if (ksym == 'w' || ksym == XK_Up)
-        return VK_UP;
+        return INPUT_KEY_UP;
     else if (ksym == 's' || ksym == XK_Down)
-        return VK_DOWN;
+        return INPUT_KEY_DOWN;
     else if (ksym == 'd' || ksym == XK_Right)
-        return VK_RIGHT;
+        return INPUT_KEY_RIGHT;
     else if (ksym == 'a' || ksym == XK_Left)
-        return VK_LEFT;
+        return INPUT_KEY_LEFT;
 
     return 0;
 }
@@ -295,6 +285,7 @@ void fill_audio_buffer(u8 *buf, u32 nbytes, u32 bytes_per_sample)
 
     prev_wave_period = wave_period;
 
+    // @TODO: account for the possibility of not 2-byte samples
     s16 *sample_out = buf;
     for (size_t i = 0; i < nbytes/bytes_per_sample; i++) {
         if (wave_counter == 0)
@@ -466,9 +457,6 @@ int main(int argc, char **argv)
     x11_init();
     pulse_init();
 
-    // @TEST Graphics
-    render_gradient(&backbuffer, x_offset, y_offset);
-
     u64 prev_time = get_nsec();
     u64 prev_clocks = __rdtsc();
 
@@ -485,11 +473,8 @@ int main(int argc, char **argv)
         f32 dt = (f32)((f64)(cur_time - prev_time) * 1e-9);
         // @HUH: why should I make dt = const if dt > const? (was in testMIPT)
 
-        printf("%.2fms/frame, %.2f fps, %lu clocks/frame\n",
+        printf("%.2f ms/frame, %.2f fps, %lu clocks/frame\n",
                dt*1e3, 1.0f/dt, cur_clocks - prev_clocks);
-
-        // @TEST Graphics
-        update_gardient(&input_state, &x_offset, &y_offset, dt);
 
         prev_time = cur_time;
         prev_clocks = cur_clocks;
@@ -498,6 +483,7 @@ int main(int argc, char **argv)
             break;
 
         // @TEST Graphics
+        update_gardient(&input_state, &x_offset, &y_offset, dt);
         render_gradient(&backbuffer, x_offset, y_offset);
 
         pulse_write_to_stream();
