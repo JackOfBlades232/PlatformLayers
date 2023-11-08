@@ -38,52 +38,66 @@ typedef struct sound_buffer_tag {
     u32 samples_per_sec;
 } sound_buffer_t;
 
-enum input_spec_key_mask_tag {
-    INPUT_KEY_LEFT      = 1,
-    INPUT_KEY_RIGHT     = 1 << 1,
-    INPUT_KEY_UP        = 1 << 2,
-    INPUT_KEY_DOWN      = 1 << 3,
-    INPUT_KEY_SPACE     = 1 << 4,
-    INPUT_KEY_ESC       = 1 << 5,
-    INPUT_KEY_ENTER     = 1 << 6,
-    INPUT_KEY_TAB       = 1 << 7,
-    INPUT_KEY_LSHIFT    = 1 << 8,
-    INPUT_KEY_RSHIFT    = 1 << 9,
-    INPUT_KEY_LCTRL     = 1 << 10,
-    INPUT_KEY_RCTRL     = 1 << 11,
-    INPUT_KEY_LALT      = 1 << 12,
-    INPUT_KEY_RALT      = 1 << 13,
-    INPUT_KEY_BACKSPACE = 1 << 14,
-    INPUT_KEY_F1        = 1 << 15,
-    INPUT_KEY_F2        = 1 << 16,
-    INPUT_KEY_F3        = 1 << 17,
-    INPUT_KEY_F4        = 1 << 18,
-    INPUT_KEY_F5        = 1 << 19,
-    INPUT_KEY_F6        = 1 << 20,
-    INPUT_KEY_F7        = 1 << 21,
-    INPUT_KEY_F8        = 1 << 22,
-    INPUT_KEY_F9        = 1 << 23,
-    INPUT_KEY_F10       = 1 << 24,
-    INPUT_KEY_F11       = 1 << 25,
-    INPUT_KEY_F12       = 1 << 26,
-};
+// @TODO: handle the possible char vs keys conflicts
+// @NOTE: right now this can not exceed '0' (48)
+enum input_spec_key_tag {
+    INPUT_KEY_LEFT      = 0,
+    INPUT_KEY_RIGHT     = 1,
+    INPUT_KEY_UP        = 2,
+    INPUT_KEY_DOWN      = 3,
+    INPUT_KEY_SPACE     = 4,
+    INPUT_KEY_ESC       = 5,
+    INPUT_KEY_ENTER     = 6,
+    INPUT_KEY_TAB       = 7,
+    INPUT_KEY_LSHIFT    = 8,
+    INPUT_KEY_RSHIFT    = 9,
+    INPUT_KEY_LCTRL     = 10,
+    INPUT_KEY_RCTRL     = 11,
+    INPUT_KEY_LALT      = 12,
+    INPUT_KEY_RALT      = 13,
+    INPUT_KEY_BACKSPACE = 14,
+    INPUT_KEY_F1        = 15,
+    INPUT_KEY_F2        = 16,
+    INPUT_KEY_F3        = 17,
+    INPUT_KEY_F4        = 18,
+    INPUT_KEY_F5        = 19,
+    INPUT_KEY_F6        = 20,
+    INPUT_KEY_F7        = 21,
+    INPUT_KEY_F8        = 22,
+    INPUT_KEY_F9        = 23,
+    INPUT_KEY_F10       = 24,
+    INPUT_KEY_F11       = 25,
+    INPUT_KEY_F12       = 26,
 
-// @TODO: move
-// @NOTE: this requires processed keyboard input with layout factored out
-inline u64 input_char_mask(char c)
-{
-    if (c >= '0' && c <= '9')
-        return 1 << (27 + c - '0');
-    else if (c >= 'a' && c <= 'z')
-        return 1 << (27 + ('9'-'0'+1) + c - 'a');
-    else
-        return 0;
-}
+    INPUT_KEY_MAX
+};
 
 typedef struct input_state_tag {
     u64 pressed_key_flags;
     bool quit;
 } input_state_t;
+
+// @TODO: move
+// @NOTE: this requires processed keyboard input with layout factored out
+u64 input_key_mask(u32 key)
+{
+    if (key >= 'A' && key <= 'Z')
+        key += 'a' - 'A';
+
+    if (key < INPUT_KEY_MAX)
+        return (u64)1 << key;
+    if (key >= '0' && key <= '9')
+        return (u64)1 << (INPUT_KEY_MAX + key - '0');
+    else if (key >= 'a' && key <= 'z')
+        return (u64)1 << (INPUT_KEY_MAX + ('9'-'0'+1) + key - 'a');
+    else
+        return 0;
+}
+
+inline bool input_test_key(input_state_t *input, u32 key)
+{
+    return input->pressed_key_flags & input_key_mask(key);
+}
 
 typedef struct win32_state_tag {
     HWND window;
@@ -128,10 +142,11 @@ typedef struct movement_input_tag {
 movement_input_t get_movement_input(input_state_t *input)
 {
     movement_input_t movement = { 0 };
-    if (input->pressed_key_flags & INPUT_KEY_LEFT)  movement.x -= 1;
-    if (input->pressed_key_flags & INPUT_KEY_RIGHT) movement.x += 1;
-    if (input->pressed_key_flags & INPUT_KEY_UP)    movement.y -= 1;
-    if (input->pressed_key_flags & INPUT_KEY_DOWN)  movement.y += 1;
+    // @TODO: fix pressed letters testing
+    if (input_test_key(input, INPUT_KEY_LEFT) || input_test_key(input, 'a'))  movement.x -= 1;
+    if (input_test_key(input, INPUT_KEY_RIGHT) || input_test_key(input, 'd')) movement.x += 1;
+    if (input_test_key(input, INPUT_KEY_UP) || input_test_key(input, 'w'))    movement.y -= 1;
+    if (input_test_key(input, INPUT_KEY_DOWN) || input_test_key(input, 's'))  movement.y += 1;
 
     return movement;
 }
@@ -227,21 +242,66 @@ win32_update_dib_section()
     ReleaseDC(win32_state.window, hdc);
 }
 
-u32 win32_key_mask(u32 vk_code)
+u64 win32_key_mask(u32 vk_code)
 {
-    // @TODO: remake to anonymous mapping vk -> input keys
-    if (vk_code == VK_ESCAPE)
-        return INPUT_KEY_ESC;
-    else if (vk_code == 'W' || vk_code == VK_UP)
-        return INPUT_KEY_UP;
-    else if (vk_code == 'S' || vk_code == VK_DOWN)
-        return INPUT_KEY_DOWN;
-    else if (vk_code == 'D' || vk_code == VK_RIGHT)
-        return INPUT_KEY_RIGHT;
-    else if (vk_code == 'A' || vk_code == VK_LEFT)
-        return INPUT_KEY_LEFT;
+    switch (vk_code) {
+    case VK_LEFT:
+        return input_key_mask(INPUT_KEY_LEFT);
+    case VK_RIGHT:
+        return input_key_mask(INPUT_KEY_RIGHT);
+    case VK_UP:
+        return input_key_mask(INPUT_KEY_UP);
+    case VK_DOWN:
+        return input_key_mask(INPUT_KEY_DOWN);
+    case VK_SPACE:
+        return input_key_mask(INPUT_KEY_SPACE);
+    case VK_ESCAPE:
+        return input_key_mask(INPUT_KEY_ESC);
+    case VK_RETURN:
+        return input_key_mask(INPUT_KEY_ENTER);
+    case VK_TAB:
+        return input_key_mask(INPUT_KEY_TAB);
+    case VK_LSHIFT:
+        return input_key_mask(INPUT_KEY_LSHIFT);
+    case VK_RSHIFT:
+        return input_key_mask(INPUT_KEY_RSHIFT);
+    case VK_CONTROL:
+        return input_key_mask(INPUT_KEY_LCTRL);
+    case VK_MENU:
+    case VK_LMENU:
+        return input_key_mask(INPUT_KEY_LALT);
+    case VK_RMENU:
+        return input_key_mask(INPUT_KEY_RALT);
+    case VK_BACK:
+        return input_key_mask(INPUT_KEY_BACKSPACE);
+    case VK_F1:
+        return input_key_mask(INPUT_KEY_F1);
+    case VK_F2:
+        return input_key_mask(INPUT_KEY_F2);
+    case VK_F3:
+        return input_key_mask(INPUT_KEY_F3);
+    case VK_F4:
+        return input_key_mask(INPUT_KEY_F4);
+    case VK_F5:
+        return input_key_mask(INPUT_KEY_F5);
+    case VK_F6:
+        return input_key_mask(INPUT_KEY_F6);
+    case VK_F7:
+        return input_key_mask(INPUT_KEY_F7);
+    case VK_F8:
+        return input_key_mask(INPUT_KEY_F8);
+    case VK_F9:
+        return input_key_mask(INPUT_KEY_F9);
+    case VK_F10:
+        return input_key_mask(INPUT_KEY_F10);
+    case VK_F11:
+        return input_key_mask(INPUT_KEY_F11);
+    case VK_F12:
+        return input_key_mask(INPUT_KEY_F12);
 
-    return 0;
+    default:
+        return input_key_mask(vk_code);
+    }
 }
 
 LRESULT CALLBACK win32_window_proc(HWND   hwnd, 
@@ -250,30 +310,30 @@ LRESULT CALLBACK win32_window_proc(HWND   hwnd,
                                    LPARAM l_param)
 {
     switch (u_msg) {
-        // Resize
-        case WM_SIZE:
-            win32_resize_dib_section();
-            break;
+    // Resize
+    case WM_SIZE:
+        win32_resize_dib_section();
+        break;
 
-        // (re)drawing of the window
-        case WM_PAINT:
-            win32_update_dib_section();
-            break;
+    // (re)drawing of the window
+    case WM_PAINT:
+        win32_update_dib_section();
+        break;
 
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
 
-        case WM_KEYDOWN:
-            input_state.pressed_key_flags |= win32_key_mask(w_param);
-            return 0;
+    case WM_KEYDOWN:
+        input_state.pressed_key_flags |= win32_key_mask(w_param);
+        return 0;
 
-        case WM_KEYUP:
-            input_state.pressed_key_flags &= ~win32_key_mask(w_param);
-            return 0;
+    case WM_KEYUP:
+        input_state.pressed_key_flags &= ~win32_key_mask(w_param);
+        return 0;
 
-        default:
-            break;
+    default:
+        break;
     }
 
     return DefWindowProc(hwnd, u_msg, w_param, l_param);
@@ -526,15 +586,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
     
     u64 prev_clocks = __rdtsc();
 
-    while (msg.message != (WM_QUIT | WM_CLOSE))
-    {
-        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
-        {
+    while (msg.message != (WM_QUIT | WM_CLOSE) && !input_state.quit) {
+        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
-        }
-        else
-        {
+        } else {
             QueryPerformanceCounter(&end_counter);
             u64 dcounts = end_counter.QuadPart - last_counter.QuadPart;
             f32 dt = (f32)dcounts / perf_count_freq;
@@ -549,6 +605,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
                      dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             sound_buffer.samples_cnt = wasapi_get_free_samples_cnt();
+
+            // @TEST Controls
+            if (input_test_key(&input_state, INPUT_KEY_ESC))
+                input_state.quit = true;
 
             // @TEST Sound
             output_audio_tone(&sound_buffer, &input_state);
