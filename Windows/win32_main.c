@@ -2,6 +2,7 @@
 #include "defs.h"
 
 #include <windows.h>
+#include <windowsx.h>
 
 #define COBJMACROS
 #include <ksguid.h> // @HACK: this is the only way to unfuck KSDATAFORMAT I found
@@ -14,8 +15,6 @@
 #include <math.h>
 
 /* @TODO:
- *  Abstract input keys
- *  Mouse input
  *  Audio latency fix
  *  Basic API for game dev
  *      \\\ At this point a little game may be made \\\
@@ -41,63 +40,52 @@ typedef struct sound_buffer_tag {
 // @TODO: handle the possible char vs keys conflicts
 // @NOTE: right now this can not exceed '0' (48)
 enum input_spec_key_tag {
-    INPUT_KEY_LEFT      = 0,
-    INPUT_KEY_RIGHT     = 1,
-    INPUT_KEY_UP        = 2,
-    INPUT_KEY_DOWN      = 3,
-    INPUT_KEY_SPACE     = 4,
-    INPUT_KEY_ESC       = 5,
-    INPUT_KEY_ENTER     = 6,
-    INPUT_KEY_TAB       = 7,
-    INPUT_KEY_LSHIFT    = 8,
-    INPUT_KEY_RSHIFT    = 9,
-    INPUT_KEY_LCTRL     = 10,
-    INPUT_KEY_RCTRL     = 11,
-    INPUT_KEY_LALT      = 12,
-    INPUT_KEY_RALT      = 13,
-    INPUT_KEY_BACKSPACE = 14,
-    INPUT_KEY_F1        = 15,
-    INPUT_KEY_F2        = 16,
-    INPUT_KEY_F3        = 17,
-    INPUT_KEY_F4        = 18,
-    INPUT_KEY_F5        = 19,
-    INPUT_KEY_F6        = 20,
-    INPUT_KEY_F7        = 21,
-    INPUT_KEY_F8        = 22,
-    INPUT_KEY_F9        = 23,
-    INPUT_KEY_F10       = 24,
-    INPUT_KEY_F11       = 25,
-    INPUT_KEY_F12       = 26,
+    // @NOTE: 'a'--'z' are considered 0..25 keys, '0'--'9' -- 25..34
+    //        other keys start at 35
+    INPUT_KEY_LMOUSE = ('z'-'a') + 1 + ('9'-'0') + 1,     
+    INPUT_KEY_RMOUSE,     
+    INPUT_KEY_MMOUSE,     
+    INPUT_KEY_LEFT,
+    INPUT_KEY_RIGHT,     
+    INPUT_KEY_UP,        
+    INPUT_KEY_DOWN,      
+    INPUT_KEY_SPACE,     
+    INPUT_KEY_ESC,       
+    INPUT_KEY_ENTER,     
+    INPUT_KEY_TAB,       
+    INPUT_KEY_LSHIFT,    
+    INPUT_KEY_RSHIFT,    
+    INPUT_KEY_LCTRL,     
+    INPUT_KEY_RCTRL,     
+    INPUT_KEY_LALT,      
+    INPUT_KEY_RALT,      
+    INPUT_KEY_BACKSPACE, 
+    INPUT_KEY_F1,        
+    INPUT_KEY_F2,        
+    INPUT_KEY_F3,        
+    INPUT_KEY_F4,        
+    INPUT_KEY_F5,        
+    INPUT_KEY_F6,        
+    INPUT_KEY_F7,        
+    INPUT_KEY_F8,        
+    INPUT_KEY_F9,        
+    INPUT_KEY_F10,       
+    INPUT_KEY_F11,       
+    INPUT_KEY_F12,       
 
     INPUT_KEY_MAX
 };
 
+typedef struct input_key_state_tag {
+    bool is_down;
+    u32 times_pressed;
+} input_key_state_t;
+
 typedef struct input_state_tag {
-    u64 pressed_key_flags;
+    input_key_state_t pressed_keys[INPUT_KEY_MAX];
+    u32 mouse_x, mouse_y; // in pixels
     bool quit;
 } input_state_t;
-
-// @TODO: move
-// @NOTE: this requires processed keyboard input with layout factored out
-u64 input_key_mask(u32 key)
-{
-    if (key >= 'A' && key <= 'Z')
-        key += 'a' - 'A';
-
-    if (key < INPUT_KEY_MAX)
-        return (u64)1 << key;
-    if (key >= '0' && key <= '9')
-        return (u64)1 << (INPUT_KEY_MAX + key - '0');
-    else if (key >= 'a' && key <= 'z')
-        return (u64)1 << (INPUT_KEY_MAX + ('9'-'0'+1) + key - 'a');
-    else
-        return 0;
-}
-
-inline bool input_test_key(input_state_t *input, u32 key)
-{
-    return input->pressed_key_flags & input_key_mask(key);
-}
 
 typedef struct win32_state_tag {
     HWND window;
@@ -135,6 +123,35 @@ static win32_state_t win32_state     = { 0 };
 static wasapi_state_t wasapi_state   = { 0 };
 
 // @TEST Controls
+
+// @NOTE: this is currently exposed to the os layer for conversion.
+//        If i start doing layouts I think the OS should have it's own conversion
+// Converts input key and ascii chars to input key idx
+u32 char_to_input_key(u32 c)
+{
+    if (c >= 'a' && c <= 'z') // ASCII char variants
+        return c - 'a';
+    else if (c >= 'A' && c <= 'Z')
+        return c - 'A';
+    else if (c >= '0' && c <= '9')
+        return c - '0' + ('z'-'a'+1);
+    else
+        return INPUT_KEY_MAX;
+}
+
+inline bool input_key_is_down(input_state_t *input, u32 key)
+{
+    if (key >= INPUT_KEY_MAX)
+        return false;
+    return input->pressed_keys[key].is_down;
+}
+
+// @TODO: I dont particularly like this separation
+inline bool input_char_is_down(input_state_t *input, u32 c)
+{
+    return input_key_is_down(input, char_to_input_key(c));
+}
+
 typedef struct movement_input_tag {
     f32 x, y;
 } movement_input_t;
@@ -143,10 +160,10 @@ movement_input_t get_movement_input(input_state_t *input)
 {
     movement_input_t movement = { 0 };
     // @TODO: fix pressed letters testing
-    if (input_test_key(input, INPUT_KEY_LEFT) || input_test_key(input, 'a'))  movement.x -= 1;
-    if (input_test_key(input, INPUT_KEY_RIGHT) || input_test_key(input, 'd')) movement.x += 1;
-    if (input_test_key(input, INPUT_KEY_UP) || input_test_key(input, 'w'))    movement.y -= 1;
-    if (input_test_key(input, INPUT_KEY_DOWN) || input_test_key(input, 's'))  movement.y += 1;
+    if (input_key_is_down(input, INPUT_KEY_LEFT) || input_char_is_down(input, 'a'))  movement.x -= 1;
+    if (input_key_is_down(input, INPUT_KEY_RIGHT) || input_char_is_down(input, 'd')) movement.x += 1;
+    if (input_key_is_down(input, INPUT_KEY_UP) || input_char_is_down(input, 'w'))    movement.y -= 1;
+    if (input_key_is_down(input, INPUT_KEY_DOWN) || input_char_is_down(input, 's'))  movement.y += 1;
 
     return movement;
 }
@@ -179,16 +196,21 @@ void render_gradient(offscreen_buffer_t *buffer, f32 x_offset, f32 y_offset)
     }
 }
 
-void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt)
+void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt, u32 screen_w, u32 screen_h)
 {
     const s32 offset_per_s = 648;
 
-    movement_input_t movement = get_movement_input(input);
-    dx = offset_per_s * movement.x;
-    dy = offset_per_s * movement.y;
+    if (input_key_is_down(input, INPUT_KEY_LMOUSE)) {
+        *x_offset = screen_w - input->mouse_x;
+        *y_offset = screen_h - input->mouse_y;
+    } else {
+        movement_input_t movement = get_movement_input(input);
+        dx = offset_per_s * movement.x;
+        dy = offset_per_s * movement.y;
 
-    *x_offset += dx*dt;
-    *y_offset += dy*dt;
+        *x_offset += dx*dt;
+        *y_offset += dy*dt;
+    }
 }
 
 /// Win32 ///
@@ -242,66 +264,81 @@ win32_update_dib_section()
     ReleaseDC(win32_state.window, hdc);
 }
 
-u64 win32_key_mask(u32 vk_code)
+u64 win32_vk_to_key(u32 vk_code)
 {
     switch (vk_code) {
     case VK_LEFT:
-        return input_key_mask(INPUT_KEY_LEFT);
+        return INPUT_KEY_LEFT;
     case VK_RIGHT:
-        return input_key_mask(INPUT_KEY_RIGHT);
+        return INPUT_KEY_RIGHT;
     case VK_UP:
-        return input_key_mask(INPUT_KEY_UP);
+        return INPUT_KEY_UP;
     case VK_DOWN:
-        return input_key_mask(INPUT_KEY_DOWN);
+        return INPUT_KEY_DOWN;
     case VK_SPACE:
-        return input_key_mask(INPUT_KEY_SPACE);
+        return INPUT_KEY_SPACE;
     case VK_ESCAPE:
-        return input_key_mask(INPUT_KEY_ESC);
+        return INPUT_KEY_ESC;
     case VK_RETURN:
-        return input_key_mask(INPUT_KEY_ENTER);
+        return INPUT_KEY_ENTER;
     case VK_TAB:
-        return input_key_mask(INPUT_KEY_TAB);
+        return INPUT_KEY_TAB;
     case VK_LSHIFT:
-        return input_key_mask(INPUT_KEY_LSHIFT);
+        return INPUT_KEY_LSHIFT;
     case VK_RSHIFT:
-        return input_key_mask(INPUT_KEY_RSHIFT);
+        return INPUT_KEY_RSHIFT;
     case VK_CONTROL:
-        return input_key_mask(INPUT_KEY_LCTRL);
+        return INPUT_KEY_LCTRL;
     case VK_MENU:
     case VK_LMENU:
-        return input_key_mask(INPUT_KEY_LALT);
+        return INPUT_KEY_LALT;
     case VK_RMENU:
-        return input_key_mask(INPUT_KEY_RALT);
+        return INPUT_KEY_RALT;
     case VK_BACK:
-        return input_key_mask(INPUT_KEY_BACKSPACE);
+        return INPUT_KEY_BACKSPACE;
     case VK_F1:
-        return input_key_mask(INPUT_KEY_F1);
+        return INPUT_KEY_F1;
     case VK_F2:
-        return input_key_mask(INPUT_KEY_F2);
+        return INPUT_KEY_F2;
     case VK_F3:
-        return input_key_mask(INPUT_KEY_F3);
+        return INPUT_KEY_F3;
     case VK_F4:
-        return input_key_mask(INPUT_KEY_F4);
+        return INPUT_KEY_F4;
     case VK_F5:
-        return input_key_mask(INPUT_KEY_F5);
+        return INPUT_KEY_F5;
     case VK_F6:
-        return input_key_mask(INPUT_KEY_F6);
+        return INPUT_KEY_F6;
     case VK_F7:
-        return input_key_mask(INPUT_KEY_F7);
+        return INPUT_KEY_F7;
     case VK_F8:
-        return input_key_mask(INPUT_KEY_F8);
+        return INPUT_KEY_F8;
     case VK_F9:
-        return input_key_mask(INPUT_KEY_F9);
+        return INPUT_KEY_F9;
     case VK_F10:
-        return input_key_mask(INPUT_KEY_F10);
+        return INPUT_KEY_F10;
     case VK_F11:
-        return input_key_mask(INPUT_KEY_F11);
+        return INPUT_KEY_F11;
     case VK_F12:
-        return input_key_mask(INPUT_KEY_F12);
+        return INPUT_KEY_F12;
 
     default:
-        return input_key_mask(vk_code);
+        return char_to_input_key(vk_code);
     }
+}
+
+// @NOTE: this isn't really win32
+inline void win32_on_key_down(u32 key)
+{
+    input_key_state_t *key_state = &input_state.pressed_keys[key];
+    // @TODO: should I instead count the total number of full up-down cycles?
+    if (!key_state->is_down) // @TODO: should I even check this?
+        key_state->times_pressed++;
+    key_state->is_down = true;
+}
+
+inline void win32_on_key_up(u32 key)
+{
+    input_state.pressed_keys[key].is_down = false;
 }
 
 LRESULT CALLBACK win32_window_proc(HWND   hwnd, 
@@ -325,11 +362,40 @@ LRESULT CALLBACK win32_window_proc(HWND   hwnd,
         return 0;
 
     case WM_KEYDOWN:
-        input_state.pressed_key_flags |= win32_key_mask(w_param);
+        win32_on_key_down(win32_vk_to_key(w_param));
         return 0;
 
     case WM_KEYUP:
-        input_state.pressed_key_flags &= ~win32_key_mask(w_param);
+        win32_on_key_up(win32_vk_to_key(w_param));
+        return 0;
+
+    case WM_MOUSEMOVE:
+        input_state.mouse_x = GET_X_LPARAM(l_param);
+        input_state.mouse_y = GET_Y_LPARAM(l_param);
+        return 0;
+
+    case WM_LBUTTONDOWN:
+        win32_on_key_down(INPUT_KEY_LMOUSE);
+        return 0;
+
+    case WM_LBUTTONUP:
+        win32_on_key_up(INPUT_KEY_LMOUSE);
+        return 0;
+
+    case WM_RBUTTONDOWN:
+        win32_on_key_down(INPUT_KEY_RMOUSE);
+        return 0;
+
+    case WM_RBUTTONUP:
+        win32_on_key_up(INPUT_KEY_RMOUSE);
+        return 0;
+
+    case WM_MBUTTONDOWN:
+        win32_on_key_down(INPUT_KEY_MMOUSE);
+        return 0;
+
+    case WM_MBUTTONUP:
+        win32_on_key_up(INPUT_KEY_MMOUSE);
         return 0;
 
     default:
@@ -555,6 +621,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
     wc.lpfnWndProc = win32_window_proc;
     wc.hInstance = h_instance;
     wc.lpszClassName = class_name;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW); // @NOTE: is it a hanging resource? heh
     ATOM rc_res = RegisterClass(&wc);
     ASSERT(rc_res);
 
@@ -607,15 +674,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             sound_buffer.samples_cnt = wasapi_get_free_samples_cnt();
 
             // @TEST Controls
-            if (input_test_key(&input_state, INPUT_KEY_ESC))
+            if (input_key_is_down(&input_state, INPUT_KEY_ESC))
                 input_state.quit = true;
+            update_gardient(&input_state, &x_offset, &y_offset, dt,
+                            backbuffer.width, backbuffer.height);
 
             // @TEST Sound
             output_audio_tone(&sound_buffer, &input_state);
 
             // @TEST Graphics
-            update_gardient(&input_state, &x_offset, &y_offset, dt);
             render_gradient(&backbuffer, x_offset, y_offset);
+
+            for (u32 i = 0; i < INPUT_KEY_MAX; i++)
+                input_state.pressed_keys[i].times_pressed = 0;            
 
             wasapi_write_to_stream();
             win32_update_dib_section();
