@@ -1,5 +1,5 @@
 ﻿/* PlatformLayers/Windows/win32_main.c */
-#include "defs.h"
+#include "os.h"
 
 #include <windows.h>
 #include <windowsx.h>
@@ -12,10 +12,7 @@
 // @NOTE: rdtsc only works with x86
 #include <intrin.h>
 
-#include <math.h>
-
 /* @TODO:
- *  Basic API for game dev (factor out game loop calls)
  *      \\\ At this point a little game may be made \\\
  *  Tighten up and go over todos
  *  Add basic file io
@@ -25,71 +22,6 @@
  *  Add (multiple?) gamepad support
  *  ...
  */
-
-typedef struct offscreen_buffer_tag {
-    u32 *bitmap_mem;
-    u32 width;
-    u32 height;
-    u32 bytes_per_pixel;
-    u32 byte_size;
-    u32 pitch;
-} offscreen_buffer_t;
-
-typedef struct sound_buffer_tag {
-    f32 *samples;
-    u32 samples_cnt;
-    u32 samples_per_sec;
-} sound_buffer_t;
-
-// @TODO: handle the possible char vs keys conflicts
-// @NOTE: right now this can not exceed '0' (48)
-enum input_spec_key_tag {
-    // @NOTE: 'a'--'z' are considered 0..25 keys, '0'--'9' -- 25..34
-    //        other keys start at 35
-    INPUT_KEY_LMOUSE = ('z'-'a') + 1 + ('9'-'0') + 1,     
-    INPUT_KEY_RMOUSE,     
-    INPUT_KEY_MMOUSE,     
-    INPUT_KEY_LEFT,
-    INPUT_KEY_RIGHT,     
-    INPUT_KEY_UP,        
-    INPUT_KEY_DOWN,      
-    INPUT_KEY_SPACE,     
-    INPUT_KEY_ESC,       
-    INPUT_KEY_ENTER,     
-    INPUT_KEY_TAB,       
-    INPUT_KEY_LSHIFT,    
-    INPUT_KEY_RSHIFT,    
-    INPUT_KEY_LCTRL,     
-    INPUT_KEY_RCTRL,     
-    INPUT_KEY_LALT,      
-    INPUT_KEY_RALT,      
-    INPUT_KEY_BACKSPACE, 
-    INPUT_KEY_F1,        
-    INPUT_KEY_F2,        
-    INPUT_KEY_F3,        
-    INPUT_KEY_F4,        
-    INPUT_KEY_F5,        
-    INPUT_KEY_F6,        
-    INPUT_KEY_F7,        
-    INPUT_KEY_F8,        
-    INPUT_KEY_F9,        
-    INPUT_KEY_F10,       
-    INPUT_KEY_F11,       
-    INPUT_KEY_F12,       
-
-    INPUT_KEY_MAX
-};
-
-typedef struct input_key_state_tag {
-    bool is_down;
-    u32 times_pressed;
-} input_key_state_t;
-
-typedef struct input_state_tag {
-    input_key_state_t pressed_keys[INPUT_KEY_MAX];
-    u32 mouse_x, mouse_y; // in pixels
-    bool quit;
-} input_state_t;
 
 typedef struct win32_state_tag {
     HWND window;
@@ -129,101 +61,10 @@ static input_state_t input_state     = { 0 };
 static win32_state_t win32_state     = { 0 };
 static wasapi_state_t wasapi_state   = { 0 };
 
-// @TEST Controls
-
-// @NOTE: this is currently exposed to the os layer for conversion.
-//        If i start doing layouts I think the OS should have it's own conversion
-// Converts input key and ascii chars to input key idx
-u32 char_to_input_key(u32 c)
-{
-    if (c >= 'a' && c <= 'z') // ASCII char variants
-        return c - 'a';
-    else if (c >= 'A' && c <= 'Z')
-        return c - 'A';
-    else if (c >= '0' && c <= '9')
-        return c - '0' + ('z'-'a'+1);
-    else
-        return INPUT_KEY_MAX;
-}
-
-inline bool input_key_is_down(input_state_t *input, u32 key)
-{
-    if (key >= INPUT_KEY_MAX)
-        return false;
-    return input->pressed_keys[key].is_down;
-}
-
-// @TODO: I dont particularly like this separation
-inline bool input_char_is_down(input_state_t *input, u32 c)
-{
-    return input_key_is_down(input, char_to_input_key(c));
-}
-
-typedef struct movement_input_tag {
-    f32 x, y;
-} movement_input_t;
-
-movement_input_t get_movement_input(input_state_t *input)
-{
-    movement_input_t movement = { 0 };
-    // @TODO: fix pressed letters testing
-    if (input_key_is_down(input, INPUT_KEY_LEFT) || input_char_is_down(input, 'a'))  movement.x -= 1;
-    if (input_key_is_down(input, INPUT_KEY_RIGHT) || input_char_is_down(input, 'd')) movement.x += 1;
-    if (input_key_is_down(input, INPUT_KEY_UP) || input_char_is_down(input, 'w'))    movement.y -= 1;
-    if (input_key_is_down(input, INPUT_KEY_DOWN) || input_char_is_down(input, 's'))  movement.y += 1;
-
-    return movement;
-}
-
-// @TEST Graphics
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 720
-
-static f32 x_offset  = 0;
-static f32 y_offset  = 0;
-static f32 dx        = 0;
-static f32 dy        = 0;
-
-void render_gradient(offscreen_buffer_t *buffer, f32 x_offset, f32 y_offset)
-{
-    u32 width = buffer->width;
-    u32 height = buffer->height;
-    u32 pitch = buffer->pitch;
-
-    u8 *row = (u8 *)buffer->bitmap_mem;
-    for (u32 y = 0; y < height; y++) {
-        u32 *pix = (u32 *)row;
-        for (u32 x = 0; x < width; x++) {
-            u8 blue = x + x_offset;
-            u8 green = y + y_offset;
-            *(pix++) = (green << 8) | blue;
-        }
-
-        row += pitch;
-    }
-}
-
-void update_gardient(input_state_t *input, f32 *x_offset, f32 *y_offset, f32 dt, u32 screen_w, u32 screen_h)
-{
-    const s32 offset_per_s = 648;
-
-    if (input_key_is_down(input, INPUT_KEY_LMOUSE)) {
-        *x_offset = screen_w - input->mouse_x;
-        *y_offset = screen_h - input->mouse_y;
-    } else {
-        movement_input_t movement = get_movement_input(input);
-        dx = offset_per_s * movement.x;
-        dy = offset_per_s * movement.y;
-
-        *x_offset += dx*dt;
-        *y_offset += dy*dt;
-    }
-}
-
 /// Win32 ///
 // @TODO: check for errors in resize/update dib section?
 
-void win32_resize_dib_section()
+static void win32_resize_dib_section()
 {
     if (backbuffer.bitmap_mem)
         VirtualFree(backbuffer.bitmap_mem, backbuffer.byte_size, MEM_RELEASE);
@@ -249,11 +90,11 @@ void win32_resize_dib_section()
                                          PAGE_READWRITE);
     ASSERT(backbuffer.bitmap_mem);
 
-    // @TEST Graphics
-    render_gradient(&backbuffer, x_offset, y_offset);
+    // @NOTE: oh game, please save our recreated bitmap
+    game_redraw(&backbuffer);
 }
 
-win32_update_dib_section()
+static win32_update_dib_section()
 {
     RECT client_rect;
     GetClientRect(win32_state.window, &client_rect);
@@ -271,7 +112,7 @@ win32_update_dib_section()
     ReleaseDC(win32_state.window, hdc);
 }
 
-u64 win32_vk_to_key(u32 vk_code)
+static u32 win32_vk_to_key(u32 vk_code)
 {
     switch (vk_code) {
     case VK_LEFT:
@@ -334,7 +175,7 @@ u64 win32_vk_to_key(u32 vk_code)
 }
 
 // @NOTE: this isn't really win32
-inline void win32_on_key_down(u32 key)
+static inline void win32_on_key_down(u32 key)
 {
     input_key_state_t *key_state = &input_state.pressed_keys[key];
     // @TODO: should I instead count the total number of full up-down cycles?
@@ -343,7 +184,7 @@ inline void win32_on_key_down(u32 key)
     key_state->is_down = true;
 }
 
-inline void win32_on_key_up(u32 key)
+static inline void win32_on_key_up(u32 key)
 {
     input_state.pressed_keys[key].is_down = false;
 }
@@ -414,53 +255,8 @@ LRESULT CALLBACK win32_window_proc(HWND   hwnd,
 
 /// WASAPI Audio ///
 
-// @TEST Sound
-void output_audio_tone(sound_buffer_t *sbuf, input_state_t *input)
-{
-    enum wave_type_t { wt_square, wt_sine };
-
-    //const enum wave_type_t wtype = wt_square;
-    const enum wave_type_t wtype = wt_sine;
-    const u32 base_tone_hz = 384;
-    const u32 offset_tone_hz = 128;
-
-    const f32 wave_volume = 0.25f;
-
-    static u32 wave_counter = 0;
-    static u32 prev_wave_period = 0;
-
-    movement_input_t movement = get_movement_input(input);
-    u32 wave_freq = base_tone_hz - offset_tone_hz*movement.y;
-    u32 wave_period = sbuf->samples_per_sec/wave_freq;
-
-    // Smooth tone switch
-    if (wave_period != prev_wave_period && prev_wave_period != 0)
-        wave_counter = (u32)((f32)wave_period * ((f32)wave_counter/prev_wave_period));
-
-    prev_wave_period = wave_period;
-
-    f32 *sample_out = sbuf->samples;
-    for (u32 i = 0; i < sbuf->samples_cnt; i++) {
-        if (wave_counter == 0)
-            wave_counter = wave_period;
-
-        f32 sample_val = 0;
-        if (wtype == wt_square) {
-            sample_val = wave_counter > wave_period/2 ?
-                wave_volume : -wave_volume;
-        } else if (wtype == wt_sine) {
-            sample_val = wave_volume *
-                sinf((f32)(wave_period-wave_counter)*2*M_PI/wave_period);
-        }
-
-        *(sample_out++) = sample_val;
-        *(sample_out++) = sample_val;
-        wave_counter--;
-    }
-}
-
 #define WASAPI_CHECK_RES(_expr) ASSERT((_expr) == S_OK)
-void wasapi_init()
+static void wasapi_init()
 {
     // @NOTE: sadly, no useful intrinsics for ids of interfaces, and this
     //  might be bad if some ID changes
@@ -543,14 +339,14 @@ void wasapi_init()
     IMMDeviceEnumerator_Release(enumerator);
 }
 
-u32 wasapi_get_samples_to_fill()
+static u32 wasapi_get_samples_to_fill()
 {
     u32 filled;
 	IAudioClient_GetCurrentPadding(wasapi_state.client, &filled);
     return wasapi_state.buf_samples - filled;
 }
 
-void wasapi_write_to_stream()
+static void wasapi_write_to_stream()
 {
     // @TODO: we need to drop latency without making the buffer small.
     //  For that, something like a play cursor pos is needed
@@ -640,6 +436,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
                                         MEM_RESERVE|MEM_COMMIT, 
                                         PAGE_READWRITE);
 
+    // @NOTE: here the game does the thing
+    game_init(&input_state, &backbuffer, &sound_buffer);
+
     MSG msg = { 0 };
 
     LARGE_INTEGER perf_count_freq_res;
@@ -668,30 +467,24 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             prev_clocks = cur_clocks;
 
             debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
-                     dt * 1e3, (u32)(1.0f/dt), dclocks);
-
-            sound_buffer.samples_cnt = wasapi_get_samples_to_fill();
-
-            // @TEST Sound
-            output_audio_tone(&sound_buffer, &input_state);
-
-            // @TEST Controls
-            if (input_key_is_down(&input_state, INPUT_KEY_ESC))
-                input_state.quit = true;
-            update_gardient(&input_state, &x_offset, &y_offset, dt,
-                            backbuffer.width, backbuffer.height);
-
-            // @TEST Graphics
-            render_gradient(&backbuffer, x_offset, y_offset);
+                         dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)
                 input_state.pressed_keys[i].times_pressed = 0;            
+
+            sound_buffer.samples_cnt = wasapi_get_samples_to_fill();
+
+            // @NOTE: here the game does another thing
+            game_update_and_render(&input_state, &backbuffer, &sound_buffer, dt);
 
             wasapi_write_to_stream();
             win32_update_dib_section();
         }
     }
 
+    // @NOTE: here the game does the last thing thing
+    game_deinit(&input_state, &backbuffer, &sound_buffer);
+    // @TODO: drain the wasapi buffer
     // @NOTE: the graphics/sound/mem deinit is left for the OS
     return (int)msg.wParam;
 }

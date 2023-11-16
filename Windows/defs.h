@@ -25,8 +25,10 @@ typedef int       bool;
 
 #define M_PI 3.14159265359
 
+// @TODO: move this stuff somewhere
+
 // Limited to 4kb
-void debug_printf(const char* format, ...)
+inline void debug_printf(const char* format, ...)
 {
     char buf[4096];
     char* p = buf;
@@ -48,7 +50,7 @@ void debug_printf(const char* format, ...)
     OutputDebugStringA(buf);
 }
 
-bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
+inline bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
 {
     for (size_t i = 0; i < size; i++) {
         if (*s1 != *s2)
