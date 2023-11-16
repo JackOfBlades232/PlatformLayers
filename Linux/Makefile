@@ -2,7 +2,7 @@ SRCMODULES = $(shell find src -type f -name '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall -O0
-DEFS = -DUSE_ASSERTIONS=1
+DEFS = -DUSE_ASSERTIONS
 LFLAGS = -lX11 -lpulse -lm
 
 %.o: %.c %.h

@@ -1,4 +1,4 @@
-/* RecklessPillager/Linux/linux_main.c */
+/* PlatformLayers/Linux/linux_main.c */
 #include "defs.h"
 
 #include <X11/Xlib.h>
