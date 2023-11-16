@@ -15,10 +15,14 @@
 #include <math.h>
 
 /* @TODO:
- *  Audio latency fix
- *  Basic API for game dev
+ *  Basic API for game dev (factor out game loop calls)
  *      \\\ At this point a little game may be made \\\
  *  Tighten up and go over todos
+ *  Add basic file io
+ *  Look into mouse input: mouse captures and hiding
+ *  Add fullscreen
+ *  Fix initial sound artifacts and latency
+ *  Add (multiple?) gamepad support
  *  ...
  */
 
@@ -110,6 +114,9 @@ typedef struct wasapi_state_tag {
     u32 bytes_per_channel;
     u32 buf_samples;
     bool started_playback;
+
+    // @TODO: make this a fucking meaningful number with framerate or smth
+    u32 latency_samples; 
 } wasapi_state_t;
 
 static const LPCWSTR app_name = L"Reckless Pillager";
@@ -452,14 +459,15 @@ void output_audio_tone(sound_buffer_t *sbuf, input_state_t *input)
     }
 }
 
+#define WASAPI_CHECK_RES(_expr) ASSERT((_expr) == S_OK)
 void wasapi_init()
 {
     // @NOTE: sadly, no useful intrinsics for ids of interfaces, and this
     //  might be bad if some ID changes
-    const CLSID CLSID_MMDeviceEnumerator = {0xbcde0395, 0xe52f, 0x467c, {0x8e,0x3d, 0xc4,0x57,0x92,0x91,0x69,0x2e}};
-    const IID IID_IMMDeviceEnumerator    = {0xa95664d2, 0x9614, 0x4f35, {0xa7,0x46, 0xde,0x8d,0xb6,0x36,0x17,0xe6}};
-    const IID IID_IAudioClient           = {0x1cb9ad4c, 0xdbfa, 0x4c32, {0xb1,0x78, 0xc2,0xf5,0x68,0xa7,0x03,0xb2}};
-    const IID IID_IAudioRenderClient     = {0xf294acfc, 0x3146, 0x4483, {0xa7,0xbf, 0xad,0xdc,0xa7,0xc2,0x60,0xe2}};
+    const CLSID CLSID_MMDeviceEnumerator = {0xbcde0395, 0xe52f, 0x467c, {0x8e,0x3d,0xc4,0x57,0x92,0x91,0x69,0x2e}};
+    const IID IID_IMMDeviceEnumerator    = {0xa95664d2, 0x9614, 0x4f35, {0xa7,0x46,0xde,0x8d,0xb6,0x36,0x17,0xe6}};
+    const IID IID_IAudioClient           = {0x1cb9ad4c, 0xdbfa, 0x4c32, {0xb1,0x78,0xc2,0xf5,0x68,0xa7,0x03,0xb2}};
+    const IID IID_IAudioRenderClient     = {0xf294acfc, 0x3146, 0x4483, {0xa7,0xbf,0xad,0xdc,0xa7,0xc2,0x60,0xe2}};
 
     // Init COM library
     CoInitializeEx(NULL, 0);
@@ -482,8 +490,7 @@ void wasapi_init()
 
 
     WAVEFORMATEX *wf;
-    u32 res = IAudioClient_GetMixFormat(wasapi_state.client, &wf);
-    ASSERT(res == S_OK); 
+    WASAPI_CHECK_RES(IAudioClient_GetMixFormat(wasapi_state.client, &wf));
 
     if (wf->wFormatTag == WAVE_FORMAT_PCM)
         wasapi_state.format = wasapi_fmt_pcm;
@@ -512,6 +519,8 @@ void wasapi_init()
     wasapi_state.bytes_per_channel = wf->wBitsPerSample/8;
     wasapi_state.bytes_per_sample = 
         wasapi_state.channels*wasapi_state.bytes_per_channel;
+    // @TODO: make this meaningful, remember?
+    wasapi_state.latency_samples = (f32)20 * wasapi_state.samples_per_sec * 1e-3;
 
     // @TODO: handle format more softly? This is going to be done in shipping
     ASSERTF(wasapi_state.channels == 1 || wasapi_state.channels == 2,
@@ -521,22 +530,12 @@ void wasapi_init()
             wasapi_state.bytes_per_channel == 4,
             "Invalid wasapi wave format");
 
-    // Set up what we can -- mode and 
-    u32 buffer_length_msec = 66;
+    u32 buffer_length_msec = 25;
 	REFERENCE_TIME dur = buffer_length_msec * 1000 * 10; // in 100ns pieces
 
-    // Set up buffer itself
-	res = IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED,
-                                  0, dur, 0, wf, NULL);
-    ASSERT(res == S_OK); 
-
-    res = IAudioClient_GetBufferSize(wasapi_state.client, 
-                                     &wasapi_state.buf_samples);
-    ASSERT(res == S_OK); 
-
-    res = IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, 
-                                  (void **)&wasapi_state.render);
-    ASSERT(res == S_OK); 
+	WASAPI_CHECK_RES(IAudioClient_Initialize(wasapi_state.client, AUDCLNT_SHAREMODE_SHARED, 0, dur, 0, wf, NULL));
+    WASAPI_CHECK_RES(IAudioClient_GetBufferSize(wasapi_state.client, &wasapi_state.buf_samples));
+    WASAPI_CHECK_RES(IAudioClient_GetService(wasapi_state.client, &IID_IAudioRenderClient, (void **)&wasapi_state.render));
 
     wasapi_state.started_playback = false;
 
@@ -544,11 +543,11 @@ void wasapi_init()
     IMMDeviceEnumerator_Release(enumerator);
 }
 
-u32 wasapi_get_free_samples_cnt()
+u32 wasapi_get_samples_to_fill()
 {
     u32 filled;
 	IAudioClient_GetCurrentPadding(wasapi_state.client, &filled);
-	return wasapi_state.buf_samples - filled;
+    return wasapi_state.buf_samples - filled;
 }
 
 void wasapi_write_to_stream()
@@ -671,16 +670,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
                      dt * 1e3, (u32)(1.0f/dt), dclocks);
 
-            sound_buffer.samples_cnt = wasapi_get_free_samples_cnt();
+            sound_buffer.samples_cnt = wasapi_get_samples_to_fill();
+
+            // @TEST Sound
+            output_audio_tone(&sound_buffer, &input_state);
 
             // @TEST Controls
             if (input_key_is_down(&input_state, INPUT_KEY_ESC))
                 input_state.quit = true;
             update_gardient(&input_state, &x_offset, &y_offset, dt,
                             backbuffer.width, backbuffer.height);
-
-            // @TEST Sound
-            output_audio_tone(&sound_buffer, &input_state);
 
             // @TEST Graphics
             render_gradient(&backbuffer, x_offset, y_offset);
