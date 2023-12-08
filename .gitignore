@@ -38,6 +38,8 @@ prog
 *.i*86
 *.x86_64
 *.hex
+x64
+x86
 
 # Debug files
 *.dSYM/
