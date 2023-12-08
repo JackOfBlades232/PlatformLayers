@@ -70,7 +70,7 @@ typedef struct sound_buffer_tag {
 
 // @TODO: add Init/Deinit?
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound);
-void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, float dt);
+void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt);
 void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound);
 
 // @NOTE: for window manager stuff, may be a good idea to just split the logic

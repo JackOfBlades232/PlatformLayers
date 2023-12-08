@@ -3,6 +3,8 @@
 
 #include <math.h>
 
+#define M_PI 3.14159265359
+
 // @TEST Controls
 static inline bool input_key_is_down(input_state_t *input, u32 key)
 {
