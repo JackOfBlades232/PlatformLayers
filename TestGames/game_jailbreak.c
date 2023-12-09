@@ -12,7 +12,18 @@
 
 #define EPS 0.0001f
 
-// @TODO: check out fps drops
+#define PHYSICS_UPDATE_INTERVAL 1.f/30.f
+
+/* @TODO:
+ *  World coordinates
+ *  Bricks to destroy
+ *  Circular ball
+ *  Correct resize
+ *  Textures, background 
+ *  Score & font (try ttf?)
+ */
+
+// @TODO: check out cube flickering
 
 static inline bool input_key_is_down(input_state_t *input, u32 key)
 {
@@ -120,6 +131,8 @@ typedef struct body_tag {
 static body_t player = { 0 };
 static body_t ball   = { 0 };
 
+static f32 fixed_dt  = 0;
+
 static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, u32 color)
 {
     u32 xmin = MAX(r.x, 0);
@@ -208,59 +221,69 @@ void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buf
 
 void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt)
 {
+    // @TEST
+    if (input_key_is_down(input, INPUT_KEY_SPACE))
+        dt = 0.f;
+
     memset(backbuffer->bitmap_mem, 0, backbuffer->byte_size);
 
     if (input_key_is_down(input, INPUT_KEY_ESC))
         input->quit = true;
-    
+
     player.vel.x = 0.f;
     if (input_char_is_down(input, 'A'))
         player.vel.x -= 200.f;
     if (input_char_is_down(input, 'D'))
         player.vel.x += 200.f;
 
-    update_body(&player, dt);
-    update_body(&ball, dt);
+    fixed_dt += dt;
 
-    // @TODO: make player bounds more strict, so that he cant press into the ball
-    clamp_body(&player, backbuffer->width, backbuffer->height, false, false);
+    if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
+        update_body(&player, fixed_dt);
+        update_body(&ball, fixed_dt);
 
-    // @TEST: noodling around, this is not correct
-    if (rects_intersect(player.r, ball.r)) {
-        rect_t ext_player_rect = { player.x - ball.width*0.5f,
-                                   player.y - ball.height*0.5f,
-                                   player.width + ball.width,
-                                   player.height + ball.height };
+        // @TODO: make player bounds more strict, so that he cant press into the ball
+        clamp_body(&player, backbuffer->width, backbuffer->height, false, false);
 
-        ray_t vel_ray = { vec2f_add(ball.pos, vec2f_scale(ball.size, 0.5f)),
-                          vec2f_normalized(ball.vel) };
+        // @TEST: noodling around, this is not correct
+        if (rects_intersect(player.r, ball.r)) {
+            rect_t ext_player_rect = { player.x - ball.width*0.5f,
+                                       player.y - ball.height*0.5f,
+                                       player.width + ball.width,
+                                       player.height + ball.height };
 
-        f32 tmin = 0.f;
-        ASSERTF(intersect_ray_with_rect(vel_ray, ext_player_rect, &tmin, NULL),
-                "BUG: Velocity ray must intersect with extended rect\n");
+            ray_t vel_ray = { vec2f_add(ball.pos, vec2f_scale(ball.size, 0.5f)),
+                              vec2f_normalized(ball.vel) };
 
-        vec2f_translate(&ball.pos, vec2f_scale(vel_ray.dir, tmin));
+            f32 tmin = 0.f;
+            ASSERTF(intersect_ray_with_rect(vel_ray, ext_player_rect, &tmin, NULL),
+                    "BUG: Velocity ray must intersect with extended rect\n");
 
-        
-        if (ball.x <= player.x - ball.width + EPS || 
-            ball.x >= player.x + player.width - EPS)
-        {
-            // @TODO: maybe use momentum balance?
-            ball.vel.x = -ball.vel.x;
-            if (SGN(ball.vel.x) == SGN(player.vel.x) &&
-                ABS(ball.vel.x) < ABS(player.vel.x) + EPS)
+            vec2f_translate(&ball.pos, vec2f_scale(vel_ray.dir, tmin));
+
+            
+            if (ball.x <= player.x - ball.width + EPS || 
+                ball.x >= player.x + player.width - EPS)
             {
-                ball.vel.x = SGN(ball.vel.x) * (ABS(player.vel.x) + EPS);
+                // @TODO: maybe use momentum balance?
+                ball.vel.x = -ball.vel.x;
+                if (SGN(ball.vel.x) == SGN(player.vel.x) &&
+                    ABS(ball.vel.x) < ABS(player.vel.x) + EPS)
+                {
+                    ball.vel.x = SGN(ball.vel.x) * (ABS(player.vel.x) + EPS);
+                }
+            }
+            if (ball.y <= player.y - ball.height + EPS ||
+                ball.y >= player.y + player.height - EPS)
+            {
+                ball.vel.y = -ball.vel.y;
             }
         }
-        if (ball.y <= player.y - ball.height + EPS ||
-            ball.y >= player.y + player.height - EPS)
-        {
-            ball.vel.y = -ball.vel.y;
-        }
-    }
 
-    clamp_body(&ball, backbuffer->width, backbuffer->height, true, true);
+        clamp_body(&ball, backbuffer->width, backbuffer->height, true, true);
+
+        fixed_dt = 0;
+    }
 
     draw_body(backbuffer, &player);
     draw_body(backbuffer, &ball);
