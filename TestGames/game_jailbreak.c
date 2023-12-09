@@ -15,12 +15,12 @@
 #define PHYSICS_UPDATE_INTERVAL 1.f/30.f
 
 /* @TODO:
- *  World coordinates
  *  Bricks to destroy
  *  Circular ball
- *  Correct resize
+ *  Correct resize (and fix flickering?)
  *  Textures, background 
  *  Score & font (try ttf?)
+ *  Sounds and music
  */
 
 // @TODO: check out cube flickering
@@ -38,6 +38,8 @@ static inline bool input_char_is_down(input_state_t *input, u32 c)
     return input_key_is_down(input, char_to_input_key(c));
 }
 
+#define INCLUDE_TYPE(_type, _name) union { _type; _type _name; };
+
 typedef struct vec2f_tag {
     f32 x, y;
 } vec2f_t;
@@ -47,14 +49,11 @@ typedef struct ray_tag {
     vec2f_t dir;
 } ray_t;
 
-typedef union rect_tag {
-    struct {
-        vec2f_t pos;
+typedef struct rect_tag {
+    INCLUDE_TYPE(vec2f_t, pos)
+    union {
         vec2f_t size;
-    };
-    struct {
-        f32 x, y;
-        f32 width, height;
+        struct { f32 width, height; };
     };
 } rect_t;
 
@@ -119,8 +118,6 @@ static bool intersect_ray_with_rect(ray_t ray, rect_t rect, f32 *tmin_out, f32 *
         return true;
     }
 }
-
-#define INCLUDE_TYPE(_type, _name) union { _type; _type _name; };
 
 typedef struct body_tag {
     INCLUDE_TYPE(rect_t, r)
@@ -199,19 +196,19 @@ static void clamp_body(body_t* body, u32 world_w, u32 world_h, bool flip_vel_x, 
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    player.width  = 150;
-    player.height = 30;
+    player.width  = backbuffer->width/10;
+    player.height = backbuffer->height/30;
     player.x      = backbuffer->width/2 - player.width/2;
     player.y      = 5*backbuffer->height/6 - player.height/2;
     player.col    = 0xFFFF0000;
 
-    ball.width    = 15;
-    ball.height   = 15;
-    ball.x        = player.x + player.width/2 - ball.width/2;
-    ball.y        = player.y - ball.height - EPS;
-    ball.vel.y    = -300.0;
-    ball.vel.x    = 300.0;
-    ball.col      = 0xFFFFFF00;
+    ball.width  = backbuffer->width/120;
+    ball.height = ball.width;
+    ball.x      = player.x + player.width/2 - ball.width/2;
+    ball.y      = player.y - ball.height - EPS;
+    ball.vel.x  = backbuffer->width/6;
+    ball.vel.y  = backbuffer->height/3;
+    ball.col    = 0xFFFFFF00;
 }
 
 void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
@@ -232,9 +229,9 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
 
     player.vel.x = 0.f;
     if (input_char_is_down(input, 'A'))
-        player.vel.x -= 200.f;
+        player.vel.x -= player.width * 4 / 3;
     if (input_char_is_down(input, 'D'))
-        player.vel.x += 200.f;
+        player.vel.x += player.width * 4 / 3;
 
     fixed_dt += dt;
 
@@ -293,14 +290,17 @@ void game_redraw(offscreen_buffer_t *backbuffer)
 {
     memset(backbuffer->bitmap_mem, 0, backbuffer->byte_size);
 
-    // @TODO: temp solution, need prev screen size to reposition and resize player
-    player.x     = backbuffer->width/2 - player.width/2;
-    player.y     = 5*backbuffer->height/6 - player.height/2;
-    player.vel.x = 0;
-    ball.x       = player.x + player.width/2 - ball.width/2;
-    ball.y       = player.y - ball.height - EPS;
-    ball.vel.y   = -300.0;
-    ball.vel.x   = 300.0;
+    // @TODO: factor out
+    player.width  = backbuffer->width/10;
+    player.height = backbuffer->height/30;
+    player.x      = backbuffer->width/2 - player.width/2;
+    player.y      = 5*backbuffer->height/6 - player.height/2;
+    ball.width    = backbuffer->width/120;
+    ball.height   = ball.width;
+    ball.x        = player.x + player.width/2 - ball.width/2;
+    ball.y        = player.y - ball.height - EPS;
+    ball.vel.x    = backbuffer->width/6;
+    ball.vel.y    = backbuffer->height/3;
 
     draw_body(backbuffer, &player);
     draw_body(backbuffer, &ball);
