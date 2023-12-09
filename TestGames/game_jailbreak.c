@@ -93,7 +93,7 @@ static bool intersect_ray_with_rect(ray_t ray, rect_t rect, f32 *tmin_out, f32 *
     f32 tx1 = (rect.x - ray.orig.x) / ray.dir.x;
     f32 tx2 = (rect.x + rect.width - ray.orig.x) / ray.dir.x;
     f32 ty1 = (rect.y - ray.orig.y) / ray.dir.y;
-    f32 ty2 = (rect.y + rect.width - ray.orig.y) / ray.dir.y;
+    f32 ty2 = (rect.y + rect.height - ray.orig.y) / ray.dir.y;
 
     f32 tx_min = MIN(tx1, tx2);
     f32 ty_min = MIN(ty1, ty2);
@@ -195,8 +195,8 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
     ball.width    = 15;
     ball.height   = 15;
     ball.x        = player.x + player.width/2 - ball.width/2;
-    ball.y        = player.y - ball.height;
-    ball.vel.y    = 300.0;
+    ball.y        = player.y - ball.height - EPS;
+    ball.vel.y    = -300.0;
     ball.vel.x    = 300.0;
     ball.col      = 0xFFFFFF00;
 }
@@ -241,13 +241,9 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
 
         vec2f_translate(&ball.pos, vec2f_scale(vel_ray.dir, tmin));
 
-        if (ball.x >= player.x - ball.width - EPS && 
-            ball.x <= player.x + player.width + EPS)
-        {
-            ball.vel.y = -ball.vel.y;
-        }
-        if (ball.y >= player.y - ball.height - EPS && 
-            ball.y <= player.y + player.height + EPS)
+        
+        if (ball.x <= player.x - ball.width + EPS || 
+            ball.x >= player.x + player.width - EPS)
         {
             // @TODO: maybe use momentum balance?
             ball.vel.x = -ball.vel.x;
@@ -257,7 +253,11 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
                 ball.vel.x = SGN(ball.vel.x) * (ABS(player.vel.x) + EPS);
             }
         }
-
+        if (ball.y <= player.y - ball.height + EPS ||
+            ball.y >= player.y + player.height - EPS)
+        {
+            ball.vel.y = -ball.vel.y;
+        }
     }
 
     clamp_body(&ball, backbuffer->width, backbuffer->height, true, true);
@@ -275,8 +275,8 @@ void game_redraw(offscreen_buffer_t *backbuffer)
     player.y     = 5*backbuffer->height/6 - player.height/2;
     player.vel.x = 0;
     ball.x       = player.x + player.width/2 - ball.width/2;
-    ball.y       = player.y - ball.height;
-    ball.vel.y   = 300.0;
+    ball.y       = player.y - ball.height - EPS;
+    ball.vel.y   = -300.0;
     ball.vel.x   = 300.0;
 
     draw_body(backbuffer, &player);
