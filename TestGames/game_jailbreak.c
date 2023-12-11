@@ -15,7 +15,6 @@
 #define PHYSICS_UPDATE_INTERVAL 1.f/30.f
 
 /* @TODO:
- *  Bricks to destroy
  *  Circular ball
  *  Correct resize (and fix flickering?)
  *  Textures, background 
@@ -119,14 +118,27 @@ static bool intersect_ray_with_rect(ray_t ray, rect_t rect, f32 *tmin_out, f32 *
     }
 }
 
-typedef struct body_tag {
+typedef struct static_body_tag {
     INCLUDE_TYPE(rect_t, r)
-    vec2f_t vel;
     u32 col;
+} static_body_t;
+
+typedef struct body_tag {
+    static_body_t;
+    vec2f_t vel;
 } body_t;
+
+typedef struct brick_tag {
+    static_body_t;
+    bool is_alive;
+} brick_t;
 
 static body_t player = { 0 };
 static body_t ball   = { 0 };
+
+#define BRICK_GRID_X 5
+#define BRICK_GRID_Y 5
+static brick_t bricks[BRICK_GRID_Y][BRICK_GRID_X] = { 0 };
 
 static f32 fixed_dt  = 0;
 
@@ -147,7 +159,7 @@ static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, u32 color)
     }
 }
 
-static inline void draw_body(offscreen_buffer_t *backbuffer, body_t *body)
+static inline void draw_body(offscreen_buffer_t *backbuffer, static_body_t *body)
 {
     draw_rect(backbuffer, body->r, body->col);
 }
@@ -209,6 +221,30 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
     ball.vel.x  = backbuffer->width/6;
     ball.vel.y  = backbuffer->height/3;
     ball.col    = 0xFFFFFF00;
+
+    const float brick_w = player.width;
+    const float brick_h = player.height;
+    const float brick_space_w = brick_w / 2;
+    const float brick_space_h = brick_h;
+    const float brick_padding_x = (backbuffer->width - brick_w * BRICK_GRID_X - brick_space_w * (BRICK_GRID_X - 1)) / 2;
+    const float brick_padding_y = backbuffer->height/2 - brick_h*BRICK_GRID_Y - brick_space_h*(BRICK_GRID_Y-1);
+
+    for (u32 y = 0; y < BRICK_GRID_Y; y++)
+        for (u32 x = 0; x < BRICK_GRID_X; x++) {
+            brick_t *brick = &bricks[y][x];
+
+            brick->x = brick_padding_x + x*(brick_w + brick_space_w);
+            brick->y = brick_padding_y + y*(brick_h + brick_space_h);
+            brick->width = brick_w;
+            brick->height = brick_h;
+
+            f32 coeff = (f32)y/(BRICK_GRID_Y-1);
+            brick->col = 0xFF000000 |
+                         (u32)(coeff*0xFF) << 16 |
+                         (u32)((1.f-coeff)*0xFF) << 8;
+
+            brick->is_alive = true;
+        }
 }
 
 void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
@@ -277,11 +313,24 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
             }
         }
 
+		for (u32 y = 0; y < BRICK_GRID_Y; y++)
+            for (u32 x = 0; x < BRICK_GRID_X; x++) {
+                brick_t* brick = &bricks[y][x];
+                if (brick->is_alive && rects_intersect(ball.r, brick->r))
+                    brick->is_alive = false;
+            }
+
         clamp_body(&ball, backbuffer->width, backbuffer->height, true, true);
 
         fixed_dt = 0;
     }
 
+    for (u32 y = 0; y < BRICK_GRID_Y; y++)
+        for (u32 x = 0; x < BRICK_GRID_X; x++) {
+            brick_t* brick = &bricks[y][x];
+            if (brick->is_alive)
+                draw_body(backbuffer, brick);
+        }
     draw_body(backbuffer, &player);
     draw_body(backbuffer, &ball);
 }
@@ -301,6 +350,20 @@ void game_redraw(offscreen_buffer_t *backbuffer)
     ball.y        = player.y - ball.height - EPS;
     ball.vel.x    = backbuffer->width/6;
     ball.vel.y    = backbuffer->height/3;
+    const float brick_w = player.width;
+    const float brick_h = player.height;
+    const float brick_space_w = brick_w / 2;
+    const float brick_space_h = brick_h;
+    const float brick_padding_x = (backbuffer->width - brick_w * BRICK_GRID_X - brick_space_w * (BRICK_GRID_X - 1)) / 2;
+    const float brick_padding_y = backbuffer->height/2 - brick_h*BRICK_GRID_Y - brick_space_h*(BRICK_GRID_Y-1);
+    for (u32 y = 0; y < BRICK_GRID_Y; y++)
+        for (u32 x = 0; x < BRICK_GRID_X; x++) {
+            brick_t *brick = &bricks[y][x];
+            brick->x = brick_padding_x + x*(brick_w + brick_space_w);
+            brick->y = brick_padding_y + y*(brick_h + brick_space_h);
+            brick->width = brick_w;
+            brick->height = brick_h;
+        }
 
     draw_body(backbuffer, &player);
     draw_body(backbuffer, &ball);
