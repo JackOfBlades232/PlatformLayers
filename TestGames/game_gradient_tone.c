@@ -6,19 +6,6 @@
 #define M_PI 3.14159265359
 
 // @TEST Controls
-static inline bool input_key_is_down(input_state_t *input, u32 key)
-{
-    if (key >= INPUT_KEY_MAX)
-        return false;
-    return input->pressed_keys[key].is_down;
-}
-
-// @TODO: I dont particularly like this separation
-static inline bool input_char_is_down(input_state_t *input, u32 c)
-{
-    return input_key_is_down(input, char_to_input_key(c));
-}
-
 typedef struct movement_input_tag {
     f32 x, y;
 } movement_input_t;

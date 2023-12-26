@@ -1,10 +1,21 @@
 /* PlatformLayers/Windows/os.h */
 #include "defs.h"
 
-// @TEST Graphics
+// @TODO: make tweakable?
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
+/// OS API for the game /// 
+// @TODO: make this more robust someday
+typedef struct mapped_file_tag {
+    void *mem;
+    u64 byte_size;
+} mapped_file_t;
+
+mapped_file_t os_map_file(const char *path);
+void os_unmap_file(mapped_file_t *file);
+
+/// Game API for the OS Layer ///
 enum input_spec_key_tag {
     // @NOTE: 'a'--'z' are considered 0..25 keys, '0'--'9' -- 25..34
     //        other keys start at 35
@@ -68,11 +79,9 @@ typedef struct sound_buffer_tag {
     u32 samples_per_sec;
 } sound_buffer_t;
 
-// @TODO: add Init/Deinit?
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound);
 void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt);
 void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound);
-
 // @NOTE: for window manager stuff, may be a good idea to just split the logic
 void game_redraw(offscreen_buffer_t *backbuffer);
 
@@ -89,4 +98,17 @@ inline u32 char_to_input_key(u32 c)
         return c - '0' + ('z'-'a'+1);
     else
         return INPUT_KEY_MAX;
+}
+
+inline bool input_key_is_down(input_state_t *input, u32 key)
+{
+    if (key >= INPUT_KEY_MAX)
+        return false;
+    return input->pressed_keys[key].is_down;
+}
+
+// @TODO: I dont particularly like this separation
+inline bool input_char_is_down(input_state_t *input, u32 c)
+{
+    return input_key_is_down(input, char_to_input_key(c));
 }

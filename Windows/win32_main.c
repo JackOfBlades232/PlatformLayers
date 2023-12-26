@@ -14,14 +14,50 @@
 
 /* @TODO:
  *      \\\ At this point a little game may be made \\\
- *  Tighten up and go over todos
  *  Add basic file io
+ *  Add config struct and method to set it (settings for the os layer)
+ *  Tighten up and go over todos
  *  Look into mouse input: mouse captures and hiding
  *  Add fullscreen
  *  Fix initial sound artifacts and latency
  *  Add (multiple?) gamepad support
  *  ...
  */
+
+mapped_file_t os_map_file(const char *path)
+{
+    mapped_file_t mapped_file = { 0 };
+    HFILE handle;
+    OFSTRUCT reopen_buff = { 0 }; 
+
+    // @TODO: more helpful error info?
+    if ((handle = OpenFile(path, &reopen_buff, OF_READ)) == HFILE_ERROR)
+        return mapped_file;
+
+    // @TODO: add support for 4GB+ files (now only using 32bit size due to ReadFile taking dword)
+    mapped_file.byte_size = GetFileSize(handle, NULL);
+    mapped_file.mem = VirtualAlloc(NULL, mapped_file.byte_size,
+                                   MEM_RESERVE|MEM_COMMIT, 
+                                   PAGE_READWRITE);
+
+    DWORD bytes_read = 0;
+    // @TODO: more helpful error info?
+    if (!ReadFile(handle, mapped_file.mem, mapped_file.byte_size, &bytes_read, NULL) ||
+        bytes_read != mapped_file.byte_size)
+    {
+        os_unmap_file(&mapped_file);
+    }
+
+    CloseHandle(handle);
+    return mapped_file;
+}
+
+void os_unmap_file(mapped_file_t *file)
+{
+    VirtualFree(file->mem, file->byte_size, MEM_RELEASE);
+    file->mem = NULL;
+    file->byte_size = 0;
+}
 
 typedef struct win32_state_tag {
     HWND window;
@@ -266,7 +302,8 @@ static void wasapi_init()
     const IID IID_IAudioRenderClient     = {0xf294acfc, 0x3146, 0x4483, {0xa7,0xbf,0xad,0xdc,0xa7,0xc2,0x60,0xe2}};
 
     // Init COM library
-    CoInitializeEx(NULL, 0);
+    // @TODO: Ex if going multithreaded
+    CoInitialize(NULL);
 
     // Create device enumerator
     IMMDeviceEnumerator *enumerator;
@@ -466,8 +503,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             last_counter = end_counter;
             prev_clocks = cur_clocks;
 
+            /*
             debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
                          dt * 1e3, (u32)(1.0f/dt), dclocks);
+                         */
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)
                 input_state.pressed_keys[i].times_pressed = 0;            

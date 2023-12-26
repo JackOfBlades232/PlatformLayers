@@ -26,19 +26,6 @@
 
 // @TODO: check out ball flickering
 
-static inline bool input_key_is_down(input_state_t *input, u32 key)
-{
-    if (key >= INPUT_KEY_MAX)
-        return false;
-    return input->pressed_keys[key].is_down;
-}
-
-// @TODO: I dont particularly like this separation
-static inline bool input_char_is_down(input_state_t *input, u32 c)
-{
-    return input_key_is_down(input, char_to_input_key(c));
-}
-
 #define INCLUDE_TYPE(_type, _name) union { _type; _type _name; };
 
 typedef struct vec2f_tag {
@@ -496,6 +483,14 @@ static void draw(offscreen_buffer_t *backbuffer)
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
+    mapped_file_t test = os_map_file("../Assets/TestText.txt");
+    if (test.mem) {
+        debug_printf("%.*s", test.byte_size, test.mem);
+        os_unmap_file(&test);
+    } else
+        debug_printf("Failed to map file");
+
+
     player.col = 0xFFFF0000;
     ball.col   = 0xFFFFFF00;
     for (u32 y = 0; y < BRICK_GRID_Y; y++)
