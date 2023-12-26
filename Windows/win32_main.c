@@ -24,6 +24,7 @@
  *  ...
  */
 
+// @TODO: add error codes
 mapped_file_t os_map_file(const char *path)
 {
     mapped_file_t mapped_file = { 0 };
@@ -54,6 +55,7 @@ mapped_file_t os_map_file(const char *path)
 
 void os_unmap_file(mapped_file_t *file)
 {
+    ASSERTF(file->mem, "Trying to unmap NULL file");
     VirtualFree(file->mem, file->byte_size, MEM_RELEASE);
     file->mem = NULL;
     file->byte_size = 0;

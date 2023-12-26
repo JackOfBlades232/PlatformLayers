@@ -26,6 +26,33 @@
 
 // @TODO: check out ball flickering
 
+// @TODO: pull out texture reading to lib
+// @TODO: Maybe some other struct for texture rather than offsc buffer?
+typedef struct mapped_texture_tag {
+    mapped_file_t file;
+    offscreen_buffer_t tex;
+} mapped_texture_t;
+
+// @TODO: add error codes
+mapped_texture_t tga_texture_map(const char *path)
+{
+    mapped_texture_t mapped_tex = { 0 };
+    mapped_tex.file = os_map_file(path);
+    if (!mapped_tex.file.mem)
+        return mapped_tex;
+
+    // @TODO: parse header and fill offsc buffer
+    // @TODO: create/pass memory to offsc buffer
+    return mapped_tex;
+}
+
+void tga_texture_unmap(mapped_texture_t *tex)
+{
+    ASSERT(tex);
+    // @TODO: if we created mem for offsc buff, free
+    os_unmap_file(&tex->file);
+}
+
 #define INCLUDE_TYPE(_type, _name) union { _type; _type _name; };
 
 typedef struct vec2f_tag {
@@ -251,7 +278,14 @@ typedef struct static_body_tag {
             };
         };
     };
-    u32 col;
+    
+    // @TEST, @TODO: make sane
+    bool has_albedo_tex;
+    union {
+        u32 col;
+        // @TODO: make it just pointer to color mem+metadata, and store textures sep
+        mapped_texture_t albedo;
+    };
 } static_body_t;
 
 typedef struct body_tag {
@@ -483,13 +517,9 @@ static void draw(offscreen_buffer_t *backbuffer)
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    mapped_file_t test = os_map_file("../Assets/TestText.txt");
-    if (test.mem) {
-        debug_printf("%.*s", test.byte_size, test.mem);
-        os_unmap_file(&test);
-    } else
-        debug_printf("Failed to map file");
-
+    // @TODO: check error and default to solid color
+    player.albedo = tga_texture_map("../Assets/ground.tga");
+    player.has_albedo_tex = true; // @TODO: (in @TEST) make this flag do smth
 
     player.col = 0xFFFF0000;
     ball.col   = 0xFFFFFF00;
@@ -510,7 +540,8 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
 
 void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    
+    // @TEST
+    tga_texture_unmap(&player.albedo);
 }
 
 void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt)
