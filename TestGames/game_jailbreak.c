@@ -15,14 +15,16 @@
 #define PHYSICS_UPDATE_INTERVAL 1.f/30.f
 
 /* @TODO:
- *  Circular ball
- *  Correct resize (and fix flickering?)
- *  Textures, background 
- *  Score & font (try ttf?)
- *  Sounds and music
+ *  Implement texture loading (object textures, background)
+ *  Implement ttf bitmap and font rendering (score)
+ *  Implement wav loading and mixer (music & sounds)
  */
 
-// @TODO: check out cube flickering
+/* @BUG s:
+ *  Fix flickering (check against bouncing box)
+ */
+
+// @TODO: check out ball flickering
 
 static inline bool input_key_is_down(input_state_t *input, u32 key)
 {
@@ -159,6 +161,61 @@ static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, u32 color)
     }
 }
 
+static void draw_circle_strip(offscreen_buffer_t *backbuffer, 
+                              s32 base_x, s32 min_y, s32 max_y, u32 color)
+{
+    if (base_x < 0 || base_x >= backbuffer->width)
+        return;
+
+    min_y = MAX(min_y, 0);
+    max_y = MIN(max_y, backbuffer->height);
+
+    u32 *pixel = backbuffer->bitmap_mem + min_y*backbuffer->width + base_x;
+    for (u32 y = min_y; y < max_y; y++) {
+        *pixel = color;
+        pixel += backbuffer->width;
+    }
+}
+
+static void draw_filled_sircle(offscreen_buffer_t *backbuffer, vec2f_t center, 
+                               f32 rad, u32 color)
+{
+    s32 cx = center.x;
+    s32 cy = center.y;
+    s32 x = -rad;
+    s32 y = 0;
+    s32 sdf = x*x + y*y - rad*rad;
+    s32 dx = 2*x + 1;
+    s32 dy = 2*y + 1;
+
+    while (-x >= y) {
+        draw_circle_strip(backbuffer, cx + x, cy - y, cy + y + 1, color);
+        draw_circle_strip(backbuffer, cx - x, cy - y, cy + y + 1, color);
+        draw_circle_strip(backbuffer, cx - y, cy + x, cy - x + 1, color);
+        draw_circle_strip(backbuffer, cx + y, cy + x, cy - x + 1, color);
+
+        if (sdf <= 0) {
+            sdf += dy;
+            dy += 2;
+            y++;
+            if (ABS(sdf + dx) < ABS(sdf)) {
+                sdf += dx;
+                dx += 2;
+                x++;
+            }
+        } else {
+            sdf += dx;
+            dx += 2;
+            x++;
+            if (ABS(sdf + dy) < ABS(sdf)) {
+                sdf += dy;
+                dy += 2;
+                y++;
+            }
+        }
+    }
+}
+
 static inline void draw_body(offscreen_buffer_t *backbuffer, static_body_t *body)
 {
     draw_rect(backbuffer, body->r, body->col);
@@ -169,17 +226,23 @@ static inline void update_body(body_t *body, f32 dt)
     vec2f_translate(&body->pos, vec2f_scale(body->vel, dt));
 }
 
-// @TEMP
-static void clamp_body(body_t* body, u32 world_w, u32 world_h, bool flip_vel_x, bool flip_vel_y)
+static inline vec2f_t body_center(body_t *body)
 {
-    if (body->x < EPS) {
-        body->x = EPS;
+    return vec2f_add(body->pos, vec2f_scale(body->size, 0.5f));
+}
+
+static void clamp_body(body_t* body, 
+                       f32 min_x, f32 min_y, f32 max_x, f32 max_y, 
+                       bool flip_vel_x, bool flip_vel_y)
+{
+    if (body->x < min_x + EPS) {
+        body->x = min_x + EPS;
         if (body->vel.x < -EPS)
             body->vel.x = -body->vel.x;
         else if (body->vel.x < EPS)
             body->vel.x = 1.f;
-    } else if (body->x > world_w - body->width - EPS) {
-        body->x = world_w - body->width - EPS;
+    } else if (body->x > max_x - body->width - EPS) {
+        body->x = max_x - body->width - EPS;
         if (body->vel.x > EPS) {
             if (flip_vel_x)
                 body->vel.x = -body->vel.x;
@@ -188,14 +251,14 @@ static void clamp_body(body_t* body, u32 world_w, u32 world_h, bool flip_vel_x, 
         } else if (body->vel.x > -EPS)
             body->vel.x = -1.f;
     }
-    if (body->y < EPS) {
-        body->y = EPS;
+    if (body->y < min_y + EPS) {
+        body->y = min_y + EPS;
         if (body->vel.y < -EPS)
             body->vel.y = -body->vel.y;
         else if (body->vel.y < EPS)
             body->vel.y = 1.f;
-    } else if (body->y > world_h - body->height - EPS) {
-        body->y = world_h - body->height - EPS;
+    } else if (body->y > max_y - body->height - EPS) {
+        body->y = max_y - body->height - EPS;
         if (body->vel.y > EPS) {
             if (flip_vel_y)
                 body->vel.y = -body->vel.y;
@@ -206,140 +269,8 @@ static void clamp_body(body_t* body, u32 world_w, u32 world_h, bool flip_vel_x, 
     }
 }
 
-void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
+static void reset_game_entities(offscreen_buffer_t *backbuffer)
 {
-    player.width  = backbuffer->width/10;
-    player.height = backbuffer->height/30;
-    player.x      = backbuffer->width/2 - player.width/2;
-    player.y      = 5*backbuffer->height/6 - player.height/2;
-    player.col    = 0xFFFF0000;
-
-    ball.width  = backbuffer->width/120;
-    ball.height = ball.width;
-    ball.x      = player.x + player.width/2 - ball.width/2;
-    ball.y      = player.y - ball.height - EPS;
-    ball.vel.x  = backbuffer->width/6;
-    ball.vel.y  = backbuffer->height/3;
-    ball.col    = 0xFFFFFF00;
-
-    const float brick_w = player.width;
-    const float brick_h = player.height;
-    const float brick_space_w = brick_w / 2;
-    const float brick_space_h = brick_h;
-    const float brick_padding_x = (backbuffer->width - brick_w * BRICK_GRID_X - brick_space_w * (BRICK_GRID_X - 1)) / 2;
-    const float brick_padding_y = backbuffer->height/2 - brick_h*BRICK_GRID_Y - brick_space_h*(BRICK_GRID_Y-1);
-
-    for (u32 y = 0; y < BRICK_GRID_Y; y++)
-        for (u32 x = 0; x < BRICK_GRID_X; x++) {
-            brick_t *brick = &bricks[y][x];
-
-            brick->x = brick_padding_x + x*(brick_w + brick_space_w);
-            brick->y = brick_padding_y + y*(brick_h + brick_space_h);
-            brick->width = brick_w;
-            brick->height = brick_h;
-
-            f32 coeff = (f32)y/(BRICK_GRID_Y-1);
-            brick->col = 0xFF000000 |
-                         (u32)(coeff*0xFF) << 16 |
-                         (u32)((1.f-coeff)*0xFF) << 8;
-
-            brick->is_alive = true;
-        }
-}
-
-void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
-{
-    
-}
-
-void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt)
-{
-    // @TEST
-    if (input_key_is_down(input, INPUT_KEY_SPACE))
-        dt = 0.f;
-
-    memset(backbuffer->bitmap_mem, 0, backbuffer->byte_size);
-
-    if (input_key_is_down(input, INPUT_KEY_ESC))
-        input->quit = true;
-
-    player.vel.x = 0.f;
-    if (input_char_is_down(input, 'A'))
-        player.vel.x -= player.width * 4 / 3;
-    if (input_char_is_down(input, 'D'))
-        player.vel.x += player.width * 4 / 3;
-
-    fixed_dt += dt;
-
-    if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
-        update_body(&player, fixed_dt);
-        update_body(&ball, fixed_dt);
-
-        // @TODO: make player bounds more strict, so that he cant press into the ball
-        clamp_body(&player, backbuffer->width, backbuffer->height, false, false);
-
-        // @TEST: noodling around, this is not correct
-        if (rects_intersect(player.r, ball.r)) {
-            rect_t ext_player_rect = { player.x - ball.width*0.5f,
-                                       player.y - ball.height*0.5f,
-                                       player.width + ball.width,
-                                       player.height + ball.height };
-
-            ray_t vel_ray = { vec2f_add(ball.pos, vec2f_scale(ball.size, 0.5f)),
-                              vec2f_normalized(ball.vel) };
-
-            f32 tmin = 0.f;
-            ASSERTF(intersect_ray_with_rect(vel_ray, ext_player_rect, &tmin, NULL),
-                    "BUG: Velocity ray must intersect with extended rect\n");
-
-            vec2f_translate(&ball.pos, vec2f_scale(vel_ray.dir, tmin));
-
-            
-            if (ball.x <= player.x - ball.width + EPS || 
-                ball.x >= player.x + player.width - EPS)
-            {
-                // @TODO: maybe use momentum balance?
-                ball.vel.x = -ball.vel.x;
-                if (SGN(ball.vel.x) == SGN(player.vel.x) &&
-                    ABS(ball.vel.x) < ABS(player.vel.x) + EPS)
-                {
-                    ball.vel.x = SGN(ball.vel.x) * (ABS(player.vel.x) + EPS);
-                }
-            }
-            if (ball.y <= player.y - ball.height + EPS ||
-                ball.y >= player.y + player.height - EPS)
-            {
-                ball.vel.y = -ball.vel.y;
-            }
-        }
-
-		for (u32 y = 0; y < BRICK_GRID_Y; y++)
-            for (u32 x = 0; x < BRICK_GRID_X; x++) {
-                brick_t* brick = &bricks[y][x];
-                if (brick->is_alive && rects_intersect(ball.r, brick->r))
-                    brick->is_alive = false;
-            }
-
-        clamp_body(&ball, backbuffer->width, backbuffer->height, true, true);
-
-        fixed_dt = 0;
-    }
-
-    for (u32 y = 0; y < BRICK_GRID_Y; y++)
-        for (u32 x = 0; x < BRICK_GRID_X; x++) {
-            brick_t* brick = &bricks[y][x];
-            if (brick->is_alive)
-                draw_body(backbuffer, brick);
-        }
-    draw_body(backbuffer, &player);
-    draw_body(backbuffer, &ball);
-}
-
-void game_redraw(offscreen_buffer_t *backbuffer)
-{
-    memset(backbuffer->bitmap_mem, 0, backbuffer->byte_size);
-
-    // @TODO: factor out
     player.width  = backbuffer->width/10;
     player.height = backbuffer->height/30;
     player.x      = backbuffer->width/2 - player.width/2;
@@ -364,7 +295,124 @@ void game_redraw(offscreen_buffer_t *backbuffer)
             brick->width = brick_w;
             brick->height = brick_h;
         }
+}
 
+static void resolve_player_to_ball_collision()
+{
+    rect_t ext_player_rect = { player.x - ball.width*0.5f,
+                               player.y - ball.height*0.5f,
+                               player.width + ball.width,
+                               player.height + ball.height };
+
+    ray_t vel_ray = { vec2f_add(ball.pos, vec2f_scale(ball.size, 0.5f)),
+                      vec2f_normalized(ball.vel) };
+
+    f32 tmin = 0.f;
+    ASSERTF(intersect_ray_with_rect(vel_ray, ext_player_rect, &tmin, NULL),
+            "BUG: Velocity ray must intersect with extended rect\n");
+
+    vec2f_translate(&ball.pos, vec2f_scale(vel_ray.dir, tmin));
+
+    
+    if (ball.x <= player.x - ball.width + EPS || 
+        ball.x >= player.x + player.width - EPS)
+    {
+        // @TODO: maybe use momentum balance?
+        ball.vel.x = -ball.vel.x;
+        if (SGN(ball.vel.x) == SGN(player.vel.x) &&
+            ABS(ball.vel.x) < ABS(player.vel.x) + EPS)
+        {
+            ball.vel.x = SGN(ball.vel.x) * (ABS(player.vel.x) + EPS);
+        }
+    }
+    if (ball.y <= player.y - ball.height + EPS ||
+        ball.y >= player.y + player.height - EPS)
+    {
+        ball.vel.y = -ball.vel.y;
+    }
+}
+
+void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
+{
+    player.col = 0xFFFF0000;
+    ball.col   = 0xFFFFFF00;
+    for (u32 y = 0; y < BRICK_GRID_Y; y++)
+        for (u32 x = 0; x < BRICK_GRID_X; x++) {
+            brick_t *brick = &bricks[y][x];
+
+            f32 coeff = (f32)y/(BRICK_GRID_Y-1);
+            brick->col = 0xFF000000 |
+                         (u32)(coeff*0xFF) << 16 |
+                         (u32)((1.f-coeff)*0xFF) << 8;
+
+            brick->is_alive = true;
+        }
+
+    reset_game_entities(backbuffer);
+}
+
+void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
+{
+    
+}
+
+void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt)
+{
+    memset(backbuffer->bitmap_mem, 0, backbuffer->byte_size);
+
+    if (input_key_is_down(input, INPUT_KEY_ESC))
+        input->quit = true;
+
+    player.vel.x = 0.f;
+    if (input_char_is_down(input, 'A'))
+        player.vel.x -= player.width * 4 / 3;
+    if (input_char_is_down(input, 'D'))
+        player.vel.x += player.width * 4 / 3;
+
+    fixed_dt += dt;
+
+    if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
+        update_body(&player, fixed_dt);
+        update_body(&ball, fixed_dt);
+
+        clamp_body(&player, ball.width, ball.height,
+                   backbuffer->width - ball.width, backbuffer->height - ball.height, 
+                   false, false);
+
+        if (rects_intersect(player.r, ball.r))
+            resolve_player_to_ball_collision();
+
+		for (u32 y = 0; y < BRICK_GRID_Y; y++)
+            for (u32 x = 0; x < BRICK_GRID_X; x++) {
+                brick_t* brick = &bricks[y][x];
+                if (brick->is_alive && rects_intersect(ball.r, brick->r))
+                    brick->is_alive = false;
+            }
+
+        clamp_body(&ball, 0, 0, backbuffer->width, backbuffer->height, true, true);
+
+        fixed_dt = 0;
+    }
+
+    for (u32 y = 0; y < BRICK_GRID_Y; y++)
+        for (u32 x = 0; x < BRICK_GRID_X; x++) {
+            brick_t* brick = &bricks[y][x];
+            if (brick->is_alive)
+                draw_body(backbuffer, brick);
+        }
+    draw_body(backbuffer, &player);
+
+    // @TODO: impl correct circular body with collisions
+    //draw_body(backbuffer, &ball);
+    draw_filled_sircle(backbuffer, body_center(&ball), ball.size.y * 0.5f, ball.col);
+}
+
+void game_redraw(offscreen_buffer_t *backbuffer)
+{
+    reset_game_entities(backbuffer);
+
+    memset(backbuffer->bitmap_mem, 0, backbuffer->byte_size);
+    
     draw_body(backbuffer, &player);
     draw_body(backbuffer, &ball);
 }
