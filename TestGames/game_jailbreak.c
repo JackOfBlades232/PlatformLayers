@@ -27,23 +27,112 @@
 // @TODO: check out ball flickering
 
 // @TODO: pull out texture reading to lib
-// @TODO: Maybe some other struct for texture rather than offsc buffer?
+// @TODO: add run-length encoded versions
+typedef struct mapped_file_crawler_tag {
+    mapped_file_t *file;
+    const u8 *pos;
+} mapped_file_crawler_t;
+
+inline u64 crawler_bytes_read(mapped_file_crawler_t *crawler)
+{
+    // @TODO: check if this is valid
+    ASSERT(crawler->pos >= crawler->file->mem);
+    return crawler->pos - crawler->file->mem;
+}
+
+inline u64 crawler_bytes_left(mapped_file_crawler_t *crawler)
+{
+    ASSERT(crawler->file->byte_size >= crawler_bytes_read(crawler));
+    return crawler->file->byte_size - crawler_bytes_read(crawler);
+}
+
+// @TODO: u32?
+bool comsume_file_chunk(mapped_file_crawler_t *crawler,
+                        void *out_mem, u32 chunk_size)
+{
+    if (crawler_bytes_left(crawler) < chunk_size)
+        return false;
+    
+    if (out_mem)
+        memcpy(out_mem, crawler->pos, chunk_size);
+
+    crawler->pos += chunk_size;
+    return true;
+}
+
+mapped_file_crawler_t make_crawler(mapped_file_t *file)
+{
+    mapped_file_crawler_t crawler = { 0 };
+    crawler.file = file;
+    crawler.pos = file->mem;
+    return crawler;
+}
+
+typedef enum texture_type_tag {
+    textype_truecolor,
+    textype_grayscale
+} texture_type_t;
+
+typedef struct texture_tag {
+    u8 *mem;
+
+    u32 width;
+    u32 height;
+    u32 bytes_per_pixel;
+
+    texture_type_t type;
+} texture_t;
+
 typedef struct mapped_texture_tag {
     mapped_file_t file;
-    offscreen_buffer_t tex;
+    texture_t tex;
 } mapped_texture_t;
 
-// @TODO: add error codes
-mapped_texture_t tga_texture_map(const char *path)
-{
-    mapped_texture_t mapped_tex = { 0 };
-    mapped_tex.file = os_map_file(path);
-    if (!mapped_tex.file.mem)
-        return mapped_tex;
+// @TODO: assert struct correctness (with sizes)
+typedef struct tga_texture_header_tag {
+    u8 id_length;
+    u8 color_map_type;
+    u8 image_type;
 
-    // @TODO: parse header and fill offsc buffer
+    struct {
+        u16 first_entry_idx;
+        u16 color_map_len;
+        u8 color_map_entry_size;
+    } color_map_spec;
+
+    struct {
+        u16 x_orig;
+        u16 y_orig;
+        u16 width;
+        u16 height;
+        u8 pix_depth;
+        u8 image_descr;
+    } image_spec;
+} tga_texture_header_t;
+
+bool tga_texture_map(const char *path, mapped_texture_t *out_tex)
+{
+    memset(out_tex, 0, sizeof(*out_tex));
+    if (!os_map_file(path, &out_tex->file))
+        goto error;
+
+    tga_texture_header_t header = { 0 };
+    mapped_file_crawler_t crawler = make_crawler(&out_tex->file);
+
+    if (!comsume_file_chunk(&crawler, &header, sizeof(header)))
+        goto error;
+
+    // @TODO: parse header
+    // @TODO: parse mem
     // @TODO: create/pass memory to offsc buffer
-    return mapped_tex;
+
+    return true;
+    
+error:
+    // @TODO: better?
+    if (out_tex->file.mem)
+        os_unmap_file(&out_tex->file);
+    return false;
 }
 
 void tga_texture_unmap(mapped_texture_t *tex)
@@ -518,7 +607,7 @@ static void draw(offscreen_buffer_t *backbuffer)
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
     // @TODO: check error and default to solid color
-    player.albedo = tga_texture_map("../Assets/ground.tga");
+    ASSERTF(tga_texture_map("../Assets/ground.tga", &player.albedo), "ERROR: failed to map player texture");
     player.has_albedo_tex = true; // @TODO: (in @TEST) make this flag do smth
 
     player.col = 0xFFFF0000;

@@ -23,6 +23,7 @@ typedef int       bool;
 #define true      1
 #define false     0
 
+// @TODO: move mutual stuff (and os.h) out os specific platf layers
 // @TODO: move this stuff somewhere
 
 // Limited to 4kb

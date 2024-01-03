@@ -12,6 +12,9 @@
 // @NOTE: rdtsc only works with x86
 #include <intrin.h>
 
+// @TODO: make my own stdlib haha?
+#include <string.h>
+
 /* @TODO:
  *      \\\ At this point a little game may be made \\\
  *  Add basic file io
@@ -25,32 +28,36 @@
  */
 
 // @TODO: add error codes
-mapped_file_t os_map_file(const char *path)
+bool os_map_file(const char *path, mapped_file_t *out_file)
 {
-    mapped_file_t mapped_file = { 0 };
+    ASSERT(out_file);
+    memset(out_file, 0, sizeof(*out_file));
+
     HFILE handle;
     OFSTRUCT reopen_buff = { 0 }; 
 
     // @TODO: more helpful error info?
     if ((handle = OpenFile(path, &reopen_buff, OF_READ)) == HFILE_ERROR)
-        return mapped_file;
+        return false;
 
     // @TODO: add support for 4GB+ files (now only using 32bit size due to ReadFile taking dword)
-    mapped_file.byte_size = GetFileSize(handle, NULL);
-    mapped_file.mem = VirtualAlloc(NULL, mapped_file.byte_size,
-                                   MEM_RESERVE|MEM_COMMIT, 
-                                   PAGE_READWRITE);
+    out_file->byte_size = GetFileSize(handle, NULL);
+    out_file->mem = VirtualAlloc(NULL, out_file->byte_size,
+                                 MEM_RESERVE|MEM_COMMIT, 
+                                 PAGE_READWRITE);
 
     DWORD bytes_read = 0;
     // @TODO: more helpful error info?
-    if (!ReadFile(handle, mapped_file.mem, mapped_file.byte_size, &bytes_read, NULL) ||
-        bytes_read != mapped_file.byte_size)
+    if (!ReadFile(handle, out_file->mem, out_file->byte_size, 
+                  &bytes_read, NULL) ||
+        bytes_read != out_file->byte_size)
     {
-        os_unmap_file(&mapped_file);
+        os_unmap_file(out_file);
+        return false;
     }
 
     CloseHandle(handle);
-    return mapped_file;
+    return true;
 }
 
 void os_unmap_file(mapped_file_t *file)

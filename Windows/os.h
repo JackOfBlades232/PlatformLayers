@@ -12,7 +12,8 @@ typedef struct mapped_file_tag {
     u64 byte_size;
 } mapped_file_t;
 
-mapped_file_t os_map_file(const char *path);
+// @TODO: error codes?
+bool os_map_file(const char *path, mapped_file_t *out_file);
 void os_unmap_file(mapped_file_t *file);
 
 /// Game API for the OS Layer ///
@@ -22,14 +23,17 @@ enum input_spec_key_tag {
     INPUT_KEY_LMOUSE = ('z'-'a') + 1 + ('9'-'0') + 1,     
     INPUT_KEY_RMOUSE,     
     INPUT_KEY_MMOUSE,     
+
     INPUT_KEY_LEFT,
     INPUT_KEY_RIGHT,     
     INPUT_KEY_UP,        
     INPUT_KEY_DOWN,      
+
     INPUT_KEY_SPACE,     
     INPUT_KEY_ESC,       
     INPUT_KEY_ENTER,     
     INPUT_KEY_TAB,       
+
     INPUT_KEY_LSHIFT,    
     INPUT_KEY_RSHIFT,    
     INPUT_KEY_LCTRL,     
@@ -37,6 +41,7 @@ enum input_spec_key_tag {
     INPUT_KEY_LALT,      
     INPUT_KEY_RALT,      
     INPUT_KEY_BACKSPACE, 
+
     INPUT_KEY_F1,        
     INPUT_KEY_F2,        
     INPUT_KEY_F3,        
@@ -49,6 +54,7 @@ enum input_spec_key_tag {
     INPUT_KEY_F10,       
     INPUT_KEY_F11,       
     INPUT_KEY_F12,       
+
 
     INPUT_KEY_MAX
 };
@@ -66,11 +72,13 @@ typedef struct input_state_tag {
 
 typedef struct offscreen_buffer_tag {
     u32 *bitmap_mem;
+
     u32 width;
     u32 height;
+    u32 pitch;
+
     u32 bytes_per_pixel;
     u32 byte_size;
-    u32 pitch;
 } offscreen_buffer_t;
 
 typedef struct sound_buffer_tag {
