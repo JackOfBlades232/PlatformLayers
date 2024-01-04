@@ -27,6 +27,23 @@
  *  ...
  */
 
+allocated_mem_t os_allocate_mem(u32 size)
+{
+    allocated_mem_t alloc = { 0 };
+    alloc.mem = VirtualAlloc(NULL, size,
+                             MEM_RESERVE|MEM_COMMIT, 
+                             PAGE_READWRITE);
+    alloc.byte_size = size;
+
+    return alloc;
+}
+
+allocated_mem_t os_free_mem(allocated_mem_t *alloc)
+{
+    ASSERT(alloc);
+    VirtualFree(alloc->mem, alloc->byte_size, MEM_RELEASE);
+}
+
 // @TODO: add error codes
 bool os_map_file(const char *path, mapped_file_t *out_file)
 {
@@ -119,7 +136,7 @@ static void win32_resize_dib_section()
 
     backbuffer.width = client_rect.right - client_rect.left;
     backbuffer.height  = client_rect.bottom - client_rect.top;
-    backbuffer.bytes_per_pixel = 4;
+    backbuffer.bytes_per_pixel = BYTES_PER_PIXEL;
     backbuffer.pitch = backbuffer.width * backbuffer.bytes_per_pixel;
     backbuffer.byte_size = backbuffer.pitch * backbuffer.height;
 
@@ -512,10 +529,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             last_counter = end_counter;
             prev_clocks = cur_clocks;
 
-            /*
             debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
                          dt * 1e3, (u32)(1.0f/dt), dclocks);
-                         */
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)
                 input_state.pressed_keys[i].times_pressed = 0;            

@@ -5,7 +5,20 @@
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
+// @TODO: huh?
+#define BYTES_PER_PIXEL 4
+
 /// OS API for the game /// 
+// @TODO: implement game mem instead of this
+// @TODO: maybe u8 instead of void?
+typedef struct allocated_mem_tag {
+    void *mem;
+    u32 byte_size;
+} allocated_mem_t;
+
+allocated_mem_t os_allocate_mem(u32 size);
+allocated_mem_t os_free_mem(allocated_mem_t *alloc);
+
 // @TODO: make this more robust someday
 typedef struct mapped_file_tag {
     void *mem;
