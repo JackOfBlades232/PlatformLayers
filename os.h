@@ -1,14 +1,14 @@
-/* PlatformLayers/Windows/os.h */
+/* PlatformLayers/os.h */
+#ifndef OS_SENTRY
+#define OS_SENTRY
+
 #include "defs.h"
 
-// @TODO: make tweakable?
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 720
-
-// @TODO: huh?
-#define BYTES_PER_PIXEL 4
-
 /// OS API for the game /// 
+
+// Limited to 4kb (@TODO: remove impl constr)
+void os_debug_printf(const char *format, ...);
+
 // @TODO: implement game mem instead of this
 // @TODO: maybe u8 instead of void?
 typedef struct allocated_mem_tag {
@@ -30,6 +30,7 @@ bool os_map_file(const char *path, mapped_file_t *out_file);
 void os_unmap_file(mapped_file_t *file);
 
 /// Game API for the OS Layer ///
+
 enum input_spec_key_tag {
     // @NOTE: 'a'--'z' are considered 0..25 keys, '0'--'9' -- 25..34
     //        other keys start at 35
@@ -133,3 +134,41 @@ inline bool input_char_is_down(input_state_t *input, u32 c)
 {
     return input_key_is_down(input, char_to_input_key(c));
 }
+
+/// Utilities for all ///
+// @TODO: move this stuff somewhere?
+
+inline bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        if (*s1 != *s2)
+            return false;
+        s1++;
+        s2++;
+    }
+    
+    return true;
+}
+
+#define PANIC do { *((u8 *) NULL) = 0; } while (0)
+
+#ifdef USE_ASSERTIONS
+  
+  #define ASSERT(_e) if(!(_e)) { os_debug_printf("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); PANIC; }
+  #define ASSERTF(_e, _fmt, ...) if(!(_e)) { os_debug_printf("(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); PANIC; }
+  
+  #define __ASSERT_GLUE(_a, _b) _a ## _b
+  #define _ASSERT_GLUE(_a, _b) __ASSERT_GLUE(_a, _b)
+  #define STATIC_ASSERT(_e) enum { _ASSERT_GLUE(s_assert_fail_, __LINE__) = 1 / (int)(!!(_e)) }
+
+#else
+
+  #define ASSERT(_e)
+  #define ASSERTF(_e, _fmt, ...)
+  #define STATIC_ASSERT(_e)
+
+#endif
+
+#define INCLUDE_TYPE(_type, _name) union { _type; _type _name; };
+
+#endif

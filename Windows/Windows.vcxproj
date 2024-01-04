@@ -128,12 +128,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="defs.h" />
-    <ClInclude Include="os.h" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="..\TestGames\game_jailbreak.c" />
     <ClCompile Include="win32_main.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\defs.h" />
+    <ClInclude Include="..\os.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

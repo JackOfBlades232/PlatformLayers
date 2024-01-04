@@ -1,5 +1,5 @@
 /* PlatformLayers/Windows/test_game.c */
-#include "os.h"
+#include "../os.h"
 
 #include <math.h>
 

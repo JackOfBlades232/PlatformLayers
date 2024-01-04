@@ -1,5 +1,5 @@
 /* PlatformLayers/Linux/linux_main.c */
-#include "defs.h"
+#include "../os.h"
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>

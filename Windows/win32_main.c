@@ -1,5 +1,5 @@
 ﻿/* PlatformLayers/Windows/win32_main.c */
-#include "os.h"
+#include "../os.h"
 
 #include <windows.h>
 #include <windowsx.h>
@@ -14,10 +14,10 @@
 
 // @TODO: make my own stdlib haha?
 #include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 /* @TODO:
- *      \\\ At this point a little game may be made \\\
- *  Add basic file io
  *  Add config struct and method to set it (settings for the os layer)
  *  Tighten up and go over todos
  *  Look into mouse input: mouse captures and hiding
@@ -26,6 +26,29 @@
  *  Add (multiple?) gamepad support
  *  ...
  */
+
+// @TODO: remove 4kb lim
+void os_debug_printf(const char* format, ...)
+{
+    char buf[4096];
+    char* p = buf;
+    va_list args;
+    int nchars;
+    const int max_len = sizeof(buf) - 3; // \r\n\0
+
+    va_start(args, format);
+    nchars = _vsnprintf_s(buf, sizeof(buf), max_len, format, args);
+    va_end(args);
+
+    if (nchars > 0)
+        p += nchars;
+
+    *(p++) = '\r';
+    *(p++) = '\n';
+    *p = '\0';
+
+    OutputDebugStringA(buf);
+}
 
 allocated_mem_t os_allocate_mem(u32 size)
 {
@@ -529,7 +552,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             last_counter = end_counter;
             prev_clocks = cur_clocks;
 
-            debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
+            os_debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
                          dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)
