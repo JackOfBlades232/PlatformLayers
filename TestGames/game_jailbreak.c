@@ -14,6 +14,7 @@
 /* @TODO:
  *  Implement texture loading (object textures, background)
     * Optimize (8-9fps AAA)
+        * Implement timer for profiling
     * Refactor
  *  Implement ttf bitmap and font rendering (score)
  *  Implement wav loading and mixer (music & sounds)
@@ -22,10 +23,6 @@
 /* @BUG-s:
  *  Fix flickering (check against bouncing box)
  */
-
-// @TODO: check out ball flickering
-
-// @TODO: pass bigger structs as pointers?
 
 typedef struct material_tag {
     texture_t *albedo;
@@ -394,6 +391,11 @@ void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buf
 
 void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt)
 {
+    // @TEST: timer
+    // @TODO: make timer lib
+    f32 time = os_get_time_in_frame();
+    u64 clocks = os_get_clocks_in_frame();
+    
     if (input_key_is_down(input, INPUT_KEY_ESC))
         input->quit = true;
 
@@ -435,7 +437,17 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
         fixed_dt = 0;
     }
 
+    // @TEST: timer
+    f32 time1 = os_get_time_in_frame();
+    u64 clocks1 = os_get_clocks_in_frame();
+    os_debug_printf("Logic took %f sec | %lu cycles", time1-time, clocks1-clocks);
+
     draw(backbuffer);
+
+    // @TEST: timer
+    f32 time2 = os_get_time_in_frame();
+    u64 clocks2 = os_get_clocks_in_frame();
+    os_debug_printf("Draw took %f sec | %lu cycles", time2-time1, clocks2-clocks1);
 }
 
 void game_redraw(offscreen_buffer_t *backbuffer)

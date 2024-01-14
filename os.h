@@ -29,6 +29,9 @@ typedef struct mapped_file_tag {
 bool os_map_file(const char *path, mapped_file_t *out_file);
 void os_unmap_file(mapped_file_t *file);
 
+f32 os_get_time_in_frame();
+u64 os_get_clocks_in_frame();
+
 /// Game API for the OS Layer ///
 
 enum input_spec_key_tag {

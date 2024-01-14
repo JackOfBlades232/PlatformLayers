@@ -28,6 +28,48 @@
  *  ...
  */
 
+typedef struct win32_state_tag {
+    HWND window;
+    HBITMAP bitmap;
+    BITMAPINFO bmi;
+
+    u64 frame_start_counter;
+    u64 perf_counter_freq;
+    u64 frame_start_clocks;
+} win32_state_t;
+
+typedef enum wasapi_stream_format_tag {
+    wasapi_fmt_pcm, 
+    wasapi_fmt_ieee 
+} wasapi_stream_format_t;
+
+typedef struct wasapi_state_tag {
+    IAudioClient        *client;
+    IAudioRenderClient  *render;
+    IMMDevice           *dev;
+
+    wasapi_stream_format_t format;
+    u32 samples_per_sec;
+    u32 channels;
+    u32 bytes_per_sample;
+    u32 bytes_per_channel;
+    u32 buf_samples;
+    bool started_playback;
+
+    // @TODO: make this a fucking number with framerate or smth
+    u32 latency_samples; 
+} wasapi_state_t;
+
+static const LPCWSTR app_name = L"Reckless Pillager";
+
+// Global state
+static offscreen_buffer_t backbuffer = { 0 };
+static sound_buffer_t sound_buffer   = { 0 };
+static input_state_t input_state     = { 0 };
+
+static win32_state_t win32_state     = { 0 };
+static wasapi_state_t wasapi_state   = { 0 };
+
 // @TODO: remove 4kb lim
 void os_debug_printf(const char* format, ...)
 {
@@ -109,43 +151,19 @@ void os_unmap_file(mapped_file_t *file)
     file->byte_size = 0;
 }
 
-typedef struct win32_state_tag {
-    HWND window;
-    HBITMAP bitmap;
-    BITMAPINFO bmi;
-} win32_state_t;
+f32 os_get_time_in_frame()
+{
+    LARGE_INTEGER cur_counter;
+    QueryPerformanceCounter(&cur_counter);
+    u64 dcounts = cur_counter.QuadPart - win32_state.frame_start_counter;
+    return (f32)dcounts / win32_state.perf_counter_freq;
+}
 
-typedef enum wasapi_stream_format_tag {
-    wasapi_fmt_pcm, 
-    wasapi_fmt_ieee 
-} wasapi_stream_format_t;
-
-typedef struct wasapi_state_tag {
-    IAudioClient        *client;
-    IAudioRenderClient  *render;
-    IMMDevice           *dev;
-
-    wasapi_stream_format_t format;
-    u32 samples_per_sec;
-    u32 channels;
-    u32 bytes_per_sample;
-    u32 bytes_per_channel;
-    u32 buf_samples;
-    bool started_playback;
-
-    // @TODO: make this a fucking meaningful number with framerate or smth
-    u32 latency_samples; 
-} wasapi_state_t;
-
-static const LPCWSTR app_name = L"Reckless Pillager";
-
-// Global state
-static offscreen_buffer_t backbuffer = { 0 };
-static sound_buffer_t sound_buffer   = { 0 };
-static input_state_t input_state     = { 0 };
-
-static win32_state_t win32_state     = { 0 };
-static wasapi_state_t wasapi_state   = { 0 };
+u64 os_get_clocks_in_frame()
+{
+    u64 cur_clocks = __rdtsc();
+    return cur_clocks - win32_state.frame_start_clocks;
+}
 
 /// Win32 ///
 // @TODO: check for errors in resize/update dib section?
@@ -530,31 +548,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
 
     LARGE_INTEGER perf_count_freq_res;
     QueryPerformanceFrequency(&perf_count_freq_res);
-    u64 perf_count_freq = perf_count_freq_res.QuadPart;
-
+    win32_state.perf_counter_freq = perf_count_freq_res.QuadPart;
     LARGE_INTEGER last_counter;
-    LARGE_INTEGER end_counter;
     QueryPerformanceCounter(&last_counter);
-    
-    u64 prev_clocks = __rdtsc();
+    win32_state.frame_start_counter = last_counter.QuadPart;
+
+    win32_state.frame_start_clocks = __rdtsc();
 
     while (msg.message != (WM_QUIT | WM_CLOSE) && !input_state.quit) {
         if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         } else {
+            LARGE_INTEGER end_counter;
             QueryPerformanceCounter(&end_counter);
-            u64 dcounts = end_counter.QuadPart - last_counter.QuadPart;
-            f32 dt = (f32)dcounts / perf_count_freq;
+            u64 dcounts = end_counter.QuadPart - win32_state.frame_start_counter;
+            f32 dt = (f32)dcounts / win32_state.perf_counter_freq;
 
             u64 cur_clocks = __rdtsc();
-            u64 dclocks = cur_clocks - prev_clocks;
+            u64 dclocks = cur_clocks - win32_state.frame_start_clocks;
 
-            last_counter = end_counter;
-            prev_clocks = cur_clocks;
+            win32_state.frame_start_counter = end_counter.QuadPart;
+            win32_state.frame_start_clocks  = cur_clocks;
 
             os_debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
-                         dt * 1e3, (u32)(1.0f/dt), dclocks);
+                            dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)
                 input_state.pressed_keys[i].times_pressed = 0;            
