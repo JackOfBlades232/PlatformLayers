@@ -18,9 +18,9 @@ void texture_free_mem(texture_t *tex)
 
 u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
 {
-    vec2f_t uv = { dst_coord.x / dst_dim.x, dst_coord.y / dst_dim.y };
-    vec2f_t dim = { tex->width, tex->height };
-    vec2f_t texcoord = vec2f_mul(uv, dim);
+    vec2f_t uv = vec2f_div(dst_coord, dst_dim);
+    vec2f_t tex_dim = { tex->width, tex->height };
+    vec2f_t texcoord = vec2f_mul(uv, tex_dim);
 
     u32 x = CLAMP(floor(texcoord.x), 0, tex->width-1);
     u32 y = CLAMP(floor(texcoord.y), 0, tex->height-1);

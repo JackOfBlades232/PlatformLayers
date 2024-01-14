@@ -9,11 +9,12 @@
 #define EPS 0.0001f
 #define PHYSICS_UPDATE_INTERVAL 1.f/30.f
 #define NOTEXTURE_DEBUG_COL 0xFFFF00FF
+#define BG_NOTEXTURE_DEBUG_COL 0xFF000000
 
 /* @TODO:
  *  Implement texture loading (object textures, background)
-    * Refactor
     * Optimize (6fps AAA)
+    * Refactor
  *  Implement ttf bitmap and font rendering (score)
  *  Implement wav loading and mixer (music & sounds)
  */
@@ -129,23 +130,21 @@ static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, material_t *mat)
 }
 
 static void draw_circle_strip(offscreen_buffer_t *backbuffer, 
-                              f32 base_x, f32 min_y, f32 max_y,
+                              f32 min_x, f32 max_x, f32 base_y,
                               rect_t circle_r, material_t *mat)
 {
-    if (base_x < 0 || base_x >= backbuffer->width)
+    if (base_y < 0 || base_y >= backbuffer->height)
         return;
 
-    min_y = MAX(min_y, 0);
-    max_y = MIN(max_y, backbuffer->height);
+    min_x = MAX(min_x, 0);
+    max_x = MIN(max_x, backbuffer->width);
 
-    // @TODO: do horiz strips instead for locality?
-    u32 *pixel = backbuffer->bitmap_mem + (u32)min_y*backbuffer->width + (u32)base_x;
-    for (u32 y = min_y; y < max_y; y++) {
-        vec2f_t r_coord = { base_x - circle_r.x, y - circle_r.y };
+    u32 *pixel = backbuffer->bitmap_mem + (u32)base_y*backbuffer->width + (u32)min_x;
+    for (u32 x = min_x; x < max_x; x++) {
+        vec2f_t r_coord = { x - circle_r.x, base_y - circle_r.y };
         // @TODO: pull out
         u32 col = get_pixel_color(mat, r_coord, circle_r.size);
-        write_pixel(pixel, col);
-        pixel += backbuffer->width;
+        write_pixel(pixel++, col);
     }
 }
 
@@ -154,8 +153,8 @@ static void draw_filled_sircle(offscreen_buffer_t *backbuffer,
 {
     f32 cx = circle.center.x;
     f32 cy = circle.center.y;
-    f32 x = -circle.rad;
-    f32 y = 0.f;
+    f32 x = 0.f;
+    f32 y = -circle.rad;
     f32 sdf = x*x + y*y - circle.rad*circle.rad;
     f32 dx = 2.f*x + 1.f;
     f32 dy = 2.f*y + 1.f;
@@ -163,30 +162,43 @@ static void draw_filled_sircle(offscreen_buffer_t *backbuffer,
     rect_t circle_r = {circle.center.x-circle.rad, circle.center.y-circle.rad,
                         2.f*circle.rad, 2.f*circle.rad};
 
-    while (-x >= y) {
-        draw_circle_strip(backbuffer, cx + x, cy - y, cy + y + 1, circle_r, mat);
-        draw_circle_strip(backbuffer, cx - x, cy - y, cy + y + 1, circle_r, mat);
-        draw_circle_strip(backbuffer, cx - y, cy + x, cy - x + 1, circle_r, mat);
-        draw_circle_strip(backbuffer, cx + y, cy + x, cy - x + 1, circle_r, mat);
-
+    while (-y >= x) {
         if (sdf <= 0.f) {
-            sdf += dy;
-            dy += 2.f;
-            y += 1.f;
-            if (ABS(sdf + dx) < ABS(sdf)) {
-                sdf += dx;
-                dx += 2.f;
-                x += 1.f;
-            }
-        }
-        else {
+            if (ABS(x) > EPS) {
+                draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy - x, circle_r, mat);
+                draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy + x, circle_r, mat);
+            } else
+                draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy, circle_r, mat);
             sdf += dx;
             dx += 2.f;
             x += 1.f;
             if (ABS(sdf + dy) < ABS(sdf)) {
+                if (-y > x) {
+                    draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy + y, circle_r, mat);
+                    draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy - y, circle_r, mat);
+                }
                 sdf += dy;
                 dy += 2.f;
                 y += 1.f;
+            }
+        }
+        else {
+            if (-y > x) {
+                draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy + y, circle_r, mat);
+                draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy - y, circle_r, mat);
+            }
+            sdf += dy;
+            dy += 2.f;
+            y += 1.f;
+            if (ABS(sdf + dx) < ABS(sdf)) {
+                if (ABS(x) > EPS) {
+                    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy - x, circle_r, mat);
+                    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy + x, circle_r, mat);
+                } else
+                    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy, circle_r, mat);
+                sdf += dx;
+                dx += 2.f;
+                x += 1.f;
             }
         }
     }
@@ -324,31 +336,35 @@ static void draw(offscreen_buffer_t *backbuffer)
     draw_circular_body(backbuffer, &ball);
 }
 
-void set_material(material_t *mat, u32 col, texture_t *tex)
+void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
 {
-    if (tex->loaded) {
+    if (!tex) {
+        mat->has_albedo_tex = false;
+        mat->col = col;
+    } else if (tex->loaded) {
         mat->albedo = tex;
         mat->has_albedo_tex = true;
         mat->col = col;
     } else {
         mat->has_albedo_tex = false;
-        mat->col = NOTEXTURE_DEBUG_COL;
+        mat->col = dbg_col;
     }
 }
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    tga_load_texture("../Assets/ground.tga", &ground_tex);
-    tga_load_texture("../Assets/sun.tga", &sun_tex);
-    tga_load_texture("../Assets/bg.tga", &bg_tex);
-    tga_load_texture("../Assets/bricks.tga", &bricks_tex);
+    //tga_load_texture("../Assets/ground.tga", &ground_tex);
+    //tga_load_texture("../Assets/sun.tga", &sun_tex);
+    //tga_load_texture("../Assets/bg.tga", &bg_tex);
+    //tga_load_texture("../Assets/bricks.tga", &bricks_tex);
 
     // @TEST
     const u32 obj_alpha_mask = 0x5FFFFFFF;
 
-    set_material(&player.mat, obj_alpha_mask & 0xFFFFFFFF, &ground_tex);
-    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, &sun_tex);
-    set_material(&bg_mat, 0xFFFFFFFF, &bg_tex);
+    set_material(&player.mat, obj_alpha_mask & 0xFFFFFFFF, NOTEXTURE_DEBUG_COL, &ground_tex);
+    //set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, &sun_tex);
+    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, NULL);
+    set_material(&bg_mat, 0xFFFFFFFF, BG_NOTEXTURE_DEBUG_COL, &bg_tex);
 
     for (u32 y = 0; y < BRICK_GRID_Y; y++)
         for (u32 x = 0; x < BRICK_GRID_X; x++) {
@@ -357,6 +373,7 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
             f32 coeff = (f32)y/(BRICK_GRID_Y-1);
             set_material(&brick->mat, 
                          (obj_alpha_mask & 0xFF000000) | (u32)(coeff*0xFF) << 16 | (u32)((1.f-coeff)*0xFF) << 8, 
+                         NOTEXTURE_DEBUG_COL,
                          &bricks_tex);
 
             brick->is_alive = true;
