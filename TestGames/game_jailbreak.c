@@ -5,6 +5,7 @@
 #include "../GameLibs/texture.h"
 #include "../GameLibs/tga_tex_loader.h"
 #include "../GameLibs/utils.h"
+#include "../GameLibs/profiling.h"
 
 #define EPS 0.0001f
 #define PHYSICS_UPDATE_INTERVAL 1.f/30.f
@@ -321,19 +322,30 @@ static void resolve_player_to_ball_collision()
 
 static void draw(offscreen_buffer_t *backbuffer)
 {
-    // @TODO: refac
-    rect_t bg_rect = { 0, 0, backbuffer->width, backbuffer->height };
-    draw_rect(backbuffer, &bg_rect, &bg_mat);
+    profiling_start_timed_section("Bg render");
+    {
+        // @TODO: refac
+        rect_t bg_rect = { 0, 0, backbuffer->width, backbuffer->height };
+        draw_rect(backbuffer, &bg_rect, &bg_mat);
+    }
+    profiling_end_and_log_timed_section();
 
-    for (u32 y = 0; y < BRICK_GRID_Y; y++)
-        for (u32 x = 0; x < BRICK_GRID_X; x++) {
-            brick_t* brick = &bricks[y][x];
-            if (brick->is_alive)
-                draw_body(backbuffer, brick);
+    profiling_start_timed_section("Bricks render");
+    {
+        for (u32 y = 0; y < BRICK_GRID_Y; y++)
+            for (u32 x = 0; x < BRICK_GRID_X; x++) {
+                brick_t* brick = &bricks[y][x];
+                if (brick->is_alive)
+                    draw_body(backbuffer, brick);
+            }
         }
+    profiling_end_and_log_timed_section();
 
-    draw_body(backbuffer, &player);
-    draw_circular_body(backbuffer, &ball);
+    profiling_start_timed_section("Player/ball render");
+    {
+        draw_body(backbuffer, &player);
+        draw_circular_body(backbuffer, &ball);
+    }
 }
 
 void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
@@ -392,62 +404,60 @@ void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buf
 void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound, f32 dt)
 {
     // @TEST: timer
-    // @TODO: make timer lib
-    f32 time = os_get_time_in_frame();
-    u64 clocks = os_get_clocks_in_frame();
-    
-    if (input_key_is_down(input, INPUT_KEY_ESC))
-        input->quit = true;
+    profiling_start_timed_section("Frame");
+    {
+        profiling_start_timed_section("Logic");
+        {
+            if (input_key_is_down(input, INPUT_KEY_ESC))
+                input->quit = true;
 
-    player.vel.x = 0.f;
-    if (input_char_is_down(input, 'A'))
-        player.vel.x -= player.width * 4 / 3;
-    if (input_char_is_down(input, 'D'))
-        player.vel.x += player.width * 4 / 3;
+            player.vel.x = 0.f;
+            if (input_char_is_down(input, 'A'))
+                player.vel.x -= player.width * 4 / 3;
+            if (input_char_is_down(input, 'D'))
+                player.vel.x += player.width * 4 / 3;
 
-    fixed_dt += dt;
+            fixed_dt += dt;
 
-    if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
-        // @TEST
-        if (input_key_is_down(input, INPUT_KEY_SPACE))
-            fixed_dt *= 0.0f;
+            if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
+                // @TEST
+                if (input_key_is_down(input, INPUT_KEY_SPACE))
+                    fixed_dt *= 0.0f;
 
-        update_body(&player, fixed_dt);
-        update_body(&ball, fixed_dt);
+                update_body(&player, fixed_dt);
+                update_body(&ball, fixed_dt);
 
-        clamp_body(&player, 2.f*ball.rad + EPS, 2.f*ball.rad + EPS,
-                   backbuffer->width - player.width - 2.f*ball.rad - EPS,
-                   backbuffer->height - player.height - 2.f*ball.rad - EPS, 
-                   false, false);
+                clamp_body(&player, 2.f*ball.rad + EPS, 2.f*ball.rad + EPS,
+                           backbuffer->width - player.width - 2.f*ball.rad - EPS,
+                           backbuffer->height - player.height - 2.f*ball.rad - EPS, 
+                           false, false);
 
-        if (rect_and_circle_intersect(&player.r, &ball.c))
-            resolve_player_to_ball_collision();
+                if (rect_and_circle_intersect(&player.r, &ball.c))
+                    resolve_player_to_ball_collision();
 
-		for (u32 y = 0; y < BRICK_GRID_Y; y++)
-            for (u32 x = 0; x < BRICK_GRID_X; x++) {
-                brick_t* brick = &bricks[y][x];
-                if (brick->is_alive && rect_and_circle_intersect(&brick->r, &ball.c))
-                    brick->is_alive = false;
+                for (u32 y = 0; y < BRICK_GRID_Y; y++)
+                    for (u32 x = 0; x < BRICK_GRID_X; x++) {
+                        brick_t* brick = &bricks[y][x];
+                        if (brick->is_alive && rect_and_circle_intersect(&brick->r, &ball.c))
+                            brick->is_alive = false;
+                    }
+
+                clamp_body(&ball, ball.rad, ball.rad, 
+                           backbuffer->width - ball.rad, backbuffer->height - ball.rad,
+                           true, true);
+
+                fixed_dt = 0;
             }
+        }
+        profiling_end_and_log_timed_section();
 
-        clamp_body(&ball, ball.rad, ball.rad, 
-                   backbuffer->width - ball.rad, backbuffer->height - ball.rad,
-                   true, true);
-
-        fixed_dt = 0;
+        profiling_start_timed_section("Draw");
+        {
+            draw(backbuffer);
+        }
+        profiling_end_and_log_timed_section();
     }
-
-    // @TEST: timer
-    f32 time1 = os_get_time_in_frame();
-    u64 clocks1 = os_get_clocks_in_frame();
-    os_debug_printf("Logic took %f sec | %lu cycles", time1-time, clocks1-clocks);
-
-    draw(backbuffer);
-
-    // @TEST: timer
-    f32 time2 = os_get_time_in_frame();
-    u64 clocks2 = os_get_clocks_in_frame();
-    os_debug_printf("Draw took %f sec | %lu cycles", time2-time1, clocks2-clocks1);
+    profiling_end_and_log_timed_section();
 }
 
 void game_redraw(offscreen_buffer_t *backbuffer)

@@ -571,7 +571,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             win32_state.frame_start_counter = end_counter.QuadPart;
             win32_state.frame_start_clocks  = cur_clocks;
 
-            os_debug_printf("%.2f ms/frame, %d fps, %lu clocks/frame\n",
+            os_debug_printf("[OS] %.2f ms/frame, %d fps, %lu clocks/frame\n",
                             dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)
