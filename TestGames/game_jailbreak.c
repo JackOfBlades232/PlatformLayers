@@ -13,14 +13,13 @@
 
 /* @TODO:
  *  Implement texture loading (object textures, background)
-    * Optimize (6fps AAA)
+    * Optimize (8-9fps AAA)
     * Refactor
  *  Implement ttf bitmap and font rendering (score)
  *  Implement wav loading and mixer (music & sounds)
  */
 
 /* @BUG-s:
- *  Fix alpha overwrites in circle drawing (strips to the same pix)
  *  Fix flickering (check against bouncing box)
  */
 
@@ -107,12 +106,12 @@ static void write_pixel(u32 *dst, u32 col)
     }
 }
 
-static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, material_t *mat)
+static void draw_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
 {
-    f32 xmin = MAX(r.x, 0);
-    f32 xmax = MAX(MIN(r.x + r.width, backbuffer->width), 0);
-    f32 ymin = MAX(r.y, 0);
-    f32 ymax = MAX(MIN(r.y + r.height, backbuffer->height), 0);
+    f32 xmin = MAX(r->x, 0);
+    f32 xmax = MAX(MIN(r->x + r->width, backbuffer->width), 0);
+    f32 ymin = MAX(r->y, 0);
+    f32 ymax = MAX(MIN(r->y + r->height, backbuffer->height), 0);
 
     u32 drawing_pitch = backbuffer->width - (u32)xmax + (u32)xmin;
     u32 *pixel = backbuffer->bitmap_mem + (u32)ymin*backbuffer->width + (u32)xmin;
@@ -120,8 +119,8 @@ static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, material_t *mat)
     // @TODO: fix texture drawing bug (waves) by keeping float coords here
     for (f32 y = ymin; y < ymax; y += 1.f) {
         for (f32 x = xmin; x < xmax; x += 1.f) {
-            vec2f_t r_coord = { x - r.x, y - r.y };
-            u32 col = get_pixel_color(mat, r_coord, r.size);
+            vec2f_t r_coord = { x - r->x, y - r->y };
+            u32 col = get_pixel_color(mat, r_coord, r->size);
             write_pixel(pixel, col);
             pixel++;
         }
@@ -131,7 +130,7 @@ static void draw_rect(offscreen_buffer_t *backbuffer, rect_t r, material_t *mat)
 
 static void draw_circle_strip(offscreen_buffer_t *backbuffer, 
                               f32 min_x, f32 max_x, f32 base_y,
-                              rect_t circle_r, material_t *mat)
+                              rect_t *circle_r, material_t *mat)
 {
     if (base_y < 0 || base_y >= backbuffer->height)
         return;
@@ -141,77 +140,81 @@ static void draw_circle_strip(offscreen_buffer_t *backbuffer,
 
     u32 *pixel = backbuffer->bitmap_mem + (u32)base_y*backbuffer->width + (u32)min_x;
     for (u32 x = min_x; x < max_x; x++) {
-        vec2f_t r_coord = { x - circle_r.x, base_y - circle_r.y };
+        vec2f_t r_coord = { x - circle_r->x, base_y - circle_r->y };
         // @TODO: pull out
-        u32 col = get_pixel_color(mat, r_coord, circle_r.size);
+        u32 col = get_pixel_color(mat, r_coord, circle_r->size);
         write_pixel(pixel++, col);
     }
 }
 
 static void draw_filled_sircle(offscreen_buffer_t *backbuffer, 
-                               circle_t circle, material_t *mat)
+                               circle_t *circle, material_t *mat)
 {
-    f32 cx = circle.center.x;
-    f32 cy = circle.center.y;
+    f32 cx = circle->center.x;
+    f32 cy = circle->center.y;
     f32 x = 0.f;
-    f32 y = -circle.rad;
-    f32 sdf = x*x + y*y - circle.rad*circle.rad;
+    f32 y = -circle->rad;
+    f32 sdf = x*x + y*y - circle->rad*circle->rad;
     f32 dx = 2.f*x + 1.f;
     f32 dy = 2.f*y + 1.f;
 
-    rect_t circle_r = {circle.center.x-circle.rad, circle.center.y-circle.rad,
-                        2.f*circle.rad, 2.f*circle.rad};
+    rect_t circle_r = {circle->center.x-circle->rad, circle->center.y-circle->rad,
+                        2.f*circle->rad, 2.f*circle->rad};
 
-    while (-y >= x) {
-        if (sdf <= 0.f) {
-            if (ABS(x) > EPS) {
-                draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy - x, circle_r, mat);
-                draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy + x, circle_r, mat);
-            } else
-                draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy, circle_r, mat);
+    bool draw_x_strip = false;
+    bool draw_y_strip = false;
+    while (-y > x) {
+        if (draw_x_strip) {
+            draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy + y, &circle_r, mat);
+            draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy - y, &circle_r, mat);
+        }
+        if (draw_y_strip) {
+            draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy - x, &circle_r, mat);
+            draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy + x, &circle_r, mat);
+        }
+        draw_x_strip = false;
+        draw_y_strip = false;
+
+        if (sdf < 0.f) {
+            draw_y_strip = true;
             sdf += dx;
             dx += 2.f;
             x += 1.f;
             if (ABS(sdf + dy) < ABS(sdf)) {
-                if (-y > x) {
-                    draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy + y, circle_r, mat);
-                    draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy - y, circle_r, mat);
-                }
+                draw_x_strip = true;
                 sdf += dy;
                 dy += 2.f;
                 y += 1.f;
             }
         }
         else {
-            if (-y > x) {
-                draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy + y, circle_r, mat);
-                draw_circle_strip(backbuffer, cx - x, cx + x + 1, cy - y, circle_r, mat);
-            }
+            draw_x_strip = true;
             sdf += dy;
             dy += 2.f;
             y += 1.f;
             if (ABS(sdf + dx) < ABS(sdf)) {
-                if (ABS(x) > EPS) {
-                    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy - x, circle_r, mat);
-                    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy + x, circle_r, mat);
-                } else
-                    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy, circle_r, mat);
+                draw_y_strip = true;
                 sdf += dx;
                 dx += 2.f;
                 x += 1.f;
             }
         }
     }
+
+    // @HACK
+    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy + x, &circle_r, mat);
+    draw_circle_strip(backbuffer, cx + y, cx - y + 1, cy - x, &circle_r, mat);
+    draw_circle_strip(backbuffer, cx - circle->rad + 1, cx + circle->rad, cy, &circle_r, mat);
 }
 
 static inline void draw_body(offscreen_buffer_t *backbuffer, static_body_t *body)
 {
-    draw_rect(backbuffer, body->r, &body->mat);
+    draw_rect(backbuffer, &body->r, &body->mat);
 }
 
 static inline void draw_circular_body(offscreen_buffer_t *backbuffer, static_body_t *body)
 {
-    draw_filled_sircle(backbuffer, body->c, &body->mat);
+    draw_filled_sircle(backbuffer, &body->c, &body->mat);
 }
 
 static inline void update_body(body_t *body, f32 dt)
@@ -294,7 +297,7 @@ static void resolve_player_to_ball_collision()
     ray_t vel_ray = { ball.center, vec2f_normalized(vec2f_add(ball.vel, vec2f_neg(player.vel))) };
 
     f32 tmin = 0.f;
-    ASSERTF(intersect_ray_with_circular_rect(vel_ray, player.r, ball.rad, &tmin, NULL),
+    ASSERTF(intersect_ray_with_circular_rect(&vel_ray, &player.r, ball.rad, &tmin, NULL),
             "BUG: Velocity ray must intersect with extended rect\n");
 
     vec2f_translate(&ball.center, vec2f_scale(vel_ray.dir, tmin));
@@ -323,7 +326,7 @@ static void draw(offscreen_buffer_t *backbuffer)
 {
     // @TODO: refac
     rect_t bg_rect = { 0, 0, backbuffer->width, backbuffer->height };
-    draw_rect(backbuffer, bg_rect, &bg_mat);
+    draw_rect(backbuffer, &bg_rect, &bg_mat);
 
     for (u32 y = 0; y < BRICK_GRID_Y; y++)
         for (u32 x = 0; x < BRICK_GRID_X; x++) {
@@ -353,17 +356,16 @@ void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    //tga_load_texture("../Assets/ground.tga", &ground_tex);
-    //tga_load_texture("../Assets/sun.tga", &sun_tex);
-    //tga_load_texture("../Assets/bg.tga", &bg_tex);
-    //tga_load_texture("../Assets/bricks.tga", &bricks_tex);
+    tga_load_texture("../Assets/ground.tga", &ground_tex);
+    tga_load_texture("../Assets/sun.tga", &sun_tex);
+    tga_load_texture("../Assets/bg.tga", &bg_tex);
+    tga_load_texture("../Assets/bricks.tga", &bricks_tex);
 
     // @TEST
     const u32 obj_alpha_mask = 0x5FFFFFFF;
 
     set_material(&player.mat, obj_alpha_mask & 0xFFFFFFFF, NOTEXTURE_DEBUG_COL, &ground_tex);
-    //set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, &sun_tex);
-    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, NULL);
+    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, &sun_tex);
     set_material(&bg_mat, 0xFFFFFFFF, BG_NOTEXTURE_DEBUG_COL, &bg_tex);
 
     for (u32 y = 0; y < BRICK_GRID_Y; y++)
@@ -406,7 +408,7 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
     if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
         // @TEST
         if (input_key_is_down(input, INPUT_KEY_SPACE))
-            fixed_dt *= 0.2f;
+            fixed_dt *= 0.0f;
 
         update_body(&player, fixed_dt);
         update_body(&ball, fixed_dt);
@@ -416,13 +418,13 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
                    backbuffer->height - player.height - 2.f*ball.rad - EPS, 
                    false, false);
 
-        if (rect_and_circle_intersect(player.r, ball.c))
+        if (rect_and_circle_intersect(&player.r, &ball.c))
             resolve_player_to_ball_collision();
 
 		for (u32 y = 0; y < BRICK_GRID_Y; y++)
             for (u32 x = 0; x < BRICK_GRID_X; x++) {
                 brick_t* brick = &bricks[y][x];
-                if (brick->is_alive && rect_and_circle_intersect(brick->r, ball.c))
+                if (brick->is_alive && rect_and_circle_intersect(&brick->r, &ball.c))
                     brick->is_alive = false;
             }
 

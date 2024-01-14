@@ -93,23 +93,23 @@ inline vec2f_t vec2f_normalized(vec2f_t v)
     return vec2f_scale(v, 1.f/vec2f_length(v));
 }
 
-inline bool rects_intersect(rect_t r1, rect_t r2)
+inline bool rects_intersect(rect_t *r1, rect_t *r2)
 {
-    return (r1.x <= r2.x + r2.width && r2.x <= r1.x + r1.width) &&
-           (r1.y <= r2.y + r2.height && r2.y <= r1.y + r1.height);
+    return (r1->x <= r2->x + r2->width && r2->x <= r1->x + r1->width) &&
+           (r1->y <= r2->y + r2->height && r2->y <= r1->y + r1->height);
 }
 
-inline bool rect_and_circle_intersect(rect_t r, circle_t c)
+inline bool rect_and_circle_intersect(rect_t *r, circle_t *c)
 {
-    f32 half_w = r.width*0.5f;
-    f32 half_h = r.height*0.5f;
-    f32 dx = MAX(ABS(c.x - (r.x + half_w)) - half_w, 0.f); 
-    f32 dy = MAX(ABS(c.y - (r.y + half_h)) - half_h, 0.f); 
-    return dx*dx + dy*dy <= c.rad*c.rad;
+    f32 half_w = r->width*0.5f;
+    f32 half_h = r->height*0.5f;
+    f32 dx = MAX(ABS(c->x - (r->x + half_w)) - half_w, 0.f); 
+    f32 dy = MAX(ABS(c->y - (r->y + half_h)) - half_h, 0.f); 
+    return dx*dx + dy*dy <= c->rad*c->rad;
 }
 
-bool intersect_ray_with_rect(ray_t ray, rect_t rect, f32 *tmin_out, f32 *tmax_out);
-bool intersect_ray_with_circle(ray_t ray, circle_t circ, f32 *tmin_out, f32 *tmax_out);
-bool intersect_ray_with_circular_rect(ray_t ray, rect_t rect, f32 rad, f32 *tmin_out, f32 *tmax_out);
+bool intersect_ray_with_rect(ray_t *ray, rect_t *rect, f32 *tmin_out, f32 *tmax_out);
+bool intersect_ray_with_circle(ray_t *ray, circle_t *circ, f32 *tmin_out, f32 *tmax_out);
+bool intersect_ray_with_circular_rect(ray_t *ray, rect_t *rect, f32 rad, f32 *tmin_out, f32 *tmax_out);
 
 #endif
