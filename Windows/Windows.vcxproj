@@ -128,11 +128,21 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\GameLibs\file_io.c" />
+    <ClCompile Include="..\GameLibs\geom.c" />
+    <ClCompile Include="..\GameLibs\texture.c" />
+    <ClCompile Include="..\GameLibs\tga_tex_loader.c" />
     <ClCompile Include="..\TestGames\game_jailbreak.c" />
     <ClCompile Include="win32_main.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\defs.h" />
+    <ClInclude Include="..\GameLibs\color.h" />
+    <ClInclude Include="..\GameLibs\file_io.h" />
+    <ClInclude Include="..\GameLibs\geom.h" />
+    <ClInclude Include="..\GameLibs\texture.h" />
+    <ClInclude Include="..\GameLibs\tga_tex_loader.h" />
+    <ClInclude Include="..\GameLibs\utils.h" />
     <ClInclude Include="..\os.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

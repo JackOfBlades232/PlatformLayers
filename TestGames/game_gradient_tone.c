@@ -1,4 +1,5 @@
-/* PlatformLayers/Windows/test_game.c */
+/* PlatformLayers/TestGames/game_gradient_tone.c */
+#include "../defs.h"
 #include "../os.h"
 
 #include <math.h>

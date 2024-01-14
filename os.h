@@ -169,6 +169,4 @@ inline bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
 
 #endif
 
-#define INCLUDE_TYPE(_type, _name) union { _type; _type _name; };
-
 #endif
