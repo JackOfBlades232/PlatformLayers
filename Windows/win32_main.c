@@ -359,7 +359,14 @@ LRESULT CALLBACK win32_window_proc(HWND   hwnd,
 
 /// WASAPI Audio ///
 
-#define WASAPI_CHECK_RES(_expr) ASSERT((_expr) == S_OK)
+// @TODO: implement different error checking for init -- this is needed for client too
+// @HACK
+#ifdef USE_ASSERTIONS
+  #define WASAPI_CHECK_RES(_expr) ASSERT((_expr) == S_OK)
+#else
+  #define WASAPI_CHECK_RES(_expr) _expr
+#endif
+
 static void wasapi_init()
 {
     // @NOTE: sadly, no useful intrinsics for ids of interfaces, and this

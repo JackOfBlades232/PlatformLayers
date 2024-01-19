@@ -25,8 +25,8 @@ void profiling_start_timed_section(const char *section_name)
     timer_entry_t *entry = &timer_stack[timer_stack_head++];
 
     entry->name         = section_name;
-    entry->start_clocks = os_get_clocks_in_frame();
     entry->start_time   = os_get_time_in_frame();
+    entry->start_clocks = os_get_clocks_in_frame();
 }
 
 void profiling_end_and_log_timed_section()
