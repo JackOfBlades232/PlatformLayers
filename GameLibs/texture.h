@@ -4,7 +4,8 @@
 
 #include "../os.h"
 #include "geom.h"
-#include "color.h"
+
+#include "profiling.h"
 
 typedef enum texture_type_tag {
     textype_truecolor,
@@ -29,6 +30,9 @@ void texture_free_mem(texture_t *tex);
 
 inline u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
 {
+    // @SPEED @TODO: profiling in progress
+    profiling_start_timed_section("Pix get");
+
     vec2f_t uv = vec2f_div(dst_coord, dst_dim);
     vec2f_t tex_dim = { tex->width, tex->height };
     vec2f_t texcoord = vec2f_mul(uv, tex_dim);
@@ -37,11 +41,15 @@ inline u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
     u32 x = CLAMP(texcoord.x, 0, tex->width-1);
     u32 y = CLAMP(texcoord.y, 0, tex->height-1);
 
+    u32 res;
     if (tex->type == textype_grayscale) {
         u8 scale = ((u8 *)tex->mem)[y*tex->width + x];
-        return color_from_channel(scale) | 0xFF000000;
+        res = color_from_channel(scale) | 0xFF000000;
     } else
-        return ((u32 *)tex->mem)[y*tex->width + x];
+        res = ((u32 *)tex->mem)[y*tex->width + x];
+
+    profiling_end_and_log_timed_section();
+    return res;
 }
 
 #endif
