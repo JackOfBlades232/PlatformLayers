@@ -338,7 +338,7 @@ static void draw(offscreen_buffer_t *backbuffer)
                 if (brick->is_alive)
                     draw_body(backbuffer, brick);
             }
-        }
+    }
     profiling_end_and_log_timed_section();
 
     profiling_start_timed_section("Player/ball render");
@@ -346,6 +346,7 @@ static void draw(offscreen_buffer_t *backbuffer)
         draw_body(backbuffer, &player);
         draw_circular_body(backbuffer, &ball);
     }
+    profiling_end_and_log_timed_section();
 }
 
 void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
