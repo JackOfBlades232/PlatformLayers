@@ -4,6 +4,7 @@
 
 #include "../os.h"
 #include "geom.h"
+#include "color.h"
 
 typedef enum texture_type_tag {
     textype_truecolor,

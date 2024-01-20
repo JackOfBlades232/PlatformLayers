@@ -1,6 +1,5 @@
 /* PlatformLayers/GameLibs/texture.c */
 #include "texture.h"
-#include "color.h"
 
 void texture_alloc_mem(texture_t *tex)
 {
