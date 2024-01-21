@@ -7,16 +7,16 @@
 #include "../GameLibs/utils.h"
 
 #define EPS 0.0001f
-#define PHYSICS_UPDATE_INTERVAL 1.f/30.f
+#define PHYSICS_UPDATE_INTERVAL 1.f/60.f
 #define NOTEXTURE_DEBUG_COL 0xFFFF00FF
 #define BG_NOTEXTURE_DEBUG_COL 0xFF000000
 
 /* @TODO:
  *  Implement texture loading (object textures, background)
     * Optimize (8-9fps AAA)
+        * fix release physics -- collision with side nans the ball
         * Optimize tex_get_pix
         * Optimize other per-pix funcs
-        * fix release build
     * Refactor
  *  Implement ttf bitmap and font rendering (score)
  *  Implement wav loading and mixer (music & sounds)
@@ -272,7 +272,7 @@ static void reset_game_entities(offscreen_buffer_t *backbuffer)
     player.y      = 5*backbuffer->height/6 - player.height/2;
     ball.rad      = backbuffer->width/120;
     ball.x        = player.x + player.width/2;
-    ball.y        = player.y - ball.rad/2 - EPS;
+    ball.y        = player.y - ball.rad - EPS;
     ball.vel.x    = backbuffer->width/6;
     ball.vel.y    = backbuffer->height/3;
     const float brick_w = player.width;
@@ -301,7 +301,7 @@ static void resolve_player_to_ball_collision()
 
     vec2f_translate(&ball.center, vec2f_scale(vel_ray.dir, tmin));
     
-    bool reflecting_from_side = ball.x < player.x + EPS || ball.x > player.x + player.width - EPS;
+    // @TODO @BUG: this shit is broken on release with side collisions
     vec2f_t contact_point = 
     {
         ball.x < player.x + EPS ? player.x : (ball.x > player.x + player.width - EPS ? player.x + player.width : ball.x),
@@ -310,15 +310,6 @@ static void resolve_player_to_ball_collision()
     vec2f_t normal = vec2f_normalized(vec2f_sub(ball.center, contact_point));
     
     ball.vel = vec2f_reflect(vec2f_neg(ball.vel), normal);
-
-    // @HACK
-    if (reflecting_from_side &&
-        SGN(player.vel.x) != 0 &&
-        SGN(ball.vel.x) != -SGN(player.vel.x) &&
-        ABS(ball.vel.x) < ABS(player.vel.x) + EPS)
-    {
-        ball.vel.x = SGN(player.vel.x) * ABS(player.vel.x) * 1.1f;
-    }
 }
 
 static void draw(offscreen_buffer_t *backbuffer)
@@ -407,16 +398,28 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
         if (input_key_is_down(input, INPUT_KEY_SPACE))
             fixed_dt *= 0.0f;
 
+        if (ball.c.x != ball.c.x)
+            ball.c.x = ball.c.x + 0.1f;
+
         update_body(&player, fixed_dt);
         update_body(&ball, fixed_dt);
 
+        if (ball.c.x != ball.c.x)
+            ball.c.x = ball.c.x + 0.1f;
+
         clamp_body(&player, 2.f*ball.rad + EPS, 2.f*ball.rad + EPS,
-                backbuffer->width - player.width - 2.f*ball.rad - EPS,
-                backbuffer->height - player.height - 2.f*ball.rad - EPS, 
-                false, false);
+                   backbuffer->width - player.width - 2.f*ball.rad - EPS,
+                   backbuffer->height - player.height - 2.f*ball.rad - EPS, 
+                   false, false);
+
+        if (ball.c.x != ball.c.x)
+            ball.c.x = ball.c.x + 0.1f;
 
         if (rect_and_circle_intersect(&player.r, &ball.c))
             resolve_player_to_ball_collision();
+
+        if (ball.c.x != ball.c.x)
+            ball.c.x = ball.c.x + 0.1f;
 
         for (u32 y = 0; y < BRICK_GRID_Y; y++)
             for (u32 x = 0; x < BRICK_GRID_X; x++) {

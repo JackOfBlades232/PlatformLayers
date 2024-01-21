@@ -4,6 +4,8 @@
 
 #include "../defs.h"
 
+// @TODO: try float colors
+
 // @TODO: automate in build
 #define USE_FAST_COLOR_FUNCTIONS 1
 

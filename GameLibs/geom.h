@@ -79,8 +79,8 @@ inline void vec2f_translate(vec2f_t *v, vec2f_t amt)
 
 inline vec2f_t vec2f_reflect(vec2f_t v, vec2f_t norm)
 {
-    vec2f_t proj = vec2f_scale(norm, v.x*norm.x + v.y*norm.y);
-    return vec2f_sub(vec2f_scale(proj, 2.f), v);
+    vec2f_t dproj = vec2f_scale(norm, 2.f * (v.x*norm.x + v.y*norm.y));
+    return vec2f_sub(dproj, v);
 }
 
 inline f32 vec2f_length(vec2f_t v)
@@ -90,7 +90,8 @@ inline f32 vec2f_length(vec2f_t v)
 
 inline vec2f_t vec2f_normalized(vec2f_t v)
 {
-    return vec2f_scale(v, 1.f/vec2f_length(v));
+    f32 len = vec2f_length(v);
+    return len == 0.f ? vec2f_lit(0.f, 0.f) : vec2f_scale(v, 1.f/len);
 }
 
 inline bool rects_intersect(rect_t *r1, rect_t *r2)

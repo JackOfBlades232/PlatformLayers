@@ -31,7 +31,7 @@ void texture_free_mem(texture_t *tex);
 inline u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
 {
     // @SPEED @TODO: profiling in progress
-    profiling_start_timed_section("Pix get");
+    //profiling_start_timed_section("Pix get");
 
     vec2f_t uv = vec2f_div(dst_coord, dst_dim);
     vec2f_t tex_dim = { tex->width, tex->height };
@@ -48,7 +48,7 @@ inline u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
     } else
         res = ((u32 *)tex->mem)[y*tex->width + x];
 
-    profiling_end_and_log_timed_section();
+    //profiling_end_and_log_timed_section();
     return res;
 }
 
