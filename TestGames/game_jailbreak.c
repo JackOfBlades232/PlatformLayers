@@ -13,13 +13,13 @@
 
 /* @TODO:
  *  Implement texture loading (object textures, background)
-    * Optimize (8-9fps AAA)
-        * fix release physics -- collision with side nans the ball
+    * Optimize (to 30-40 fps in debug)
         * Optimize tex_get_pix
         * Optimize other per-pix funcs
     * Refactor
  *  Implement ttf bitmap and font rendering (score)
  *  Implement wav loading and mixer (music & sounds)
+ *  Cleanup & game loop
  */
 
 /* @BUG-s:
@@ -293,15 +293,17 @@ static void reset_game_entities(offscreen_buffer_t *backbuffer)
 
 static void resolve_player_to_ball_collision()
 {
-    ray_t vel_ray = { ball.center, vec2f_normalized(vec2f_add(ball.vel, vec2f_neg(player.vel))) };
+    // @HACK: this is physically incorrect
+    ray_t vel_ray = { ball.center, vec2f_normalized(vec2f_sub(ball.vel, player.vel)) };
 
+    // @TODO: i should NOT put game logic in asserts. They lead to bugs in release build!
     f32 tmin = 0.f;
-    ASSERTF(intersect_ray_with_circular_rect(&vel_ray, &player.r, ball.rad, &tmin, NULL),
-            "BUG: Velocity ray must intersect with extended rect\n");
+    bool intersected = intersect_ray_with_circular_rect(&vel_ray, &player.r, ball.rad, &tmin, NULL);
+    ASSERTF(intersected, "BUG: Velocity ray must intersect with extended rect\n");
 
     vec2f_translate(&ball.center, vec2f_scale(vel_ray.dir, tmin));
     
-    // @TODO @BUG: this shit is broken on release with side collisions
+    bool reflecting_from_side = ball.x < player.x + EPS || ball.x > player.x + player.width - EPS;
     vec2f_t contact_point = 
     {
         ball.x < player.x + EPS ? player.x : (ball.x > player.x + player.width - EPS ? player.x + player.width : ball.x),
@@ -310,6 +312,15 @@ static void resolve_player_to_ball_collision()
     vec2f_t normal = vec2f_normalized(vec2f_sub(ball.center, contact_point));
     
     ball.vel = vec2f_reflect(vec2f_neg(ball.vel), normal);
+
+    // @HACK
+    if (reflecting_from_side &&
+        SGN(player.vel.x) != 0 &&
+        SGN(ball.vel.x) != -SGN(player.vel.x) &&
+        ABS(ball.vel.x) < ABS(player.vel.x) + EPS)
+    {
+        ball.vel.x = SGN(player.vel.x) * ABS(player.vel.x) * 1.1f;
+    }
 }
 
 static void draw(offscreen_buffer_t *backbuffer)
@@ -396,30 +407,18 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
     if (fixed_dt >= PHYSICS_UPDATE_INTERVAL) {
         // @TEST
         if (input_key_is_down(input, INPUT_KEY_SPACE))
-            fixed_dt *= 0.0f;
-
-        if (ball.c.x != ball.c.x)
-            ball.c.x = ball.c.x + 0.1f;
+            fixed_dt *= 0.2f;
 
         update_body(&player, fixed_dt);
         update_body(&ball, fixed_dt);
-
-        if (ball.c.x != ball.c.x)
-            ball.c.x = ball.c.x + 0.1f;
 
         clamp_body(&player, 2.f*ball.rad + EPS, 2.f*ball.rad + EPS,
                    backbuffer->width - player.width - 2.f*ball.rad - EPS,
                    backbuffer->height - player.height - 2.f*ball.rad - EPS, 
                    false, false);
 
-        if (ball.c.x != ball.c.x)
-            ball.c.x = ball.c.x + 0.1f;
-
         if (rect_and_circle_intersect(&player.r, &ball.c))
             resolve_player_to_ball_collision();
-
-        if (ball.c.x != ball.c.x)
-            ball.c.x = ball.c.x + 0.1f;
 
         for (u32 y = 0; y < BRICK_GRID_Y; y++)
             for (u32 x = 0; x < BRICK_GRID_X; x++) {
@@ -429,8 +428,8 @@ void game_update_and_render(input_state_t *input, offscreen_buffer_t *backbuffer
             }
 
         clamp_body(&ball, ball.rad, ball.rad, 
-                backbuffer->width - ball.rad, backbuffer->height - ball.rad,
-                true, true);
+                   backbuffer->width - ball.rad, backbuffer->height - ball.rad,
+                   true, true);
 
         fixed_dt = 0;
     }
