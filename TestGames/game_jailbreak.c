@@ -81,7 +81,7 @@ static inline u32 get_pixel_color(material_t *mat, vec2f_t dst_coord, vec2f_t ds
 {
     if (mat->has_albedo_tex) {
         u32 tex_col = texture_get_pixel(mat->albedo, dst_coord, dst_dim);
-        return SCALE_COLOR(tex_col, mat->col);
+        return MUL_COLORS(tex_col, mat->col);
     } else
         return mat->col;
 }
@@ -96,12 +96,9 @@ static void write_pixel(u32 *dst, u32 col)
         u32 dst_alpha = *dst >> 24;
         if (dst_alpha + col_alpha > 0xFF)
             dst_alpha = 0xFF - col_alpha;
-        
-        u32 dst_alpha_mask = color_from_channel(dst_alpha);
-        u32 col_alpha_mask = color_from_channel(col_alpha);
 
-        u32 rgb = add_colors(SCALE_COLOR(*dst, dst_alpha_mask), SCALE_COLOR(col, col_alpha_mask));
-        *dst = color_from_channels(rgb & 0xFF, (rgb >> 8) & 0xFF, (rgb >> 16) & 0xFF, dst_alpha + col_alpha);
+        u32 rgb = add_colors(SCALE_COLOR(*dst, dst_alpha), SCALE_COLOR(col, col_alpha)) & 0xFFFFFF;
+        *dst = ((u32)(dst_alpha + col_alpha) << 24) | rgb;
     }
 }
 
