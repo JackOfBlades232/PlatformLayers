@@ -114,6 +114,8 @@ void tga_load_texture(const char *path, texture_t *out_tex)
     out_tex->height = header.image_spec.height;
 
     u32 in_bytes_per_pixel;
+    // @HACK Will be orred into the pixel, a little hacky
+    u32 alpha_override = 0x0;
     tga_channel_mask_t cmask = { 0 };
 
     // Parse pixel depth and layout
@@ -151,6 +153,7 @@ void tga_load_texture(const char *path, texture_t *out_tex)
             // No alpha
             cmask.ash = 0;
             cmask.am  = 0x0;
+            alpha_override = 0xFF;
         } else if (header.image_spec.pix_depth == 32) {
             if (header.image_spec.image_descr & 0xF != 8) // Alpha depth == 8 bit
                 goto cleanup;
@@ -193,6 +196,9 @@ void tga_load_texture(const char *path, texture_t *out_tex)
             u32 pix_data = 0;
             if (!consume_file_chunk(&crawler, &pix_data, in_bytes_per_pixel))
                 goto cleanup;
+            // @HACK: if read less bytes, shift them to less significant @TODO: allow big endian arch
+            if (in_bytes_per_pixel < 4)
+                pix_data >>= 8 * (4 - in_bytes_per_pixel);
 
             // @TODO: here also need to handle big endian
 
@@ -212,7 +218,7 @@ void tga_load_texture(const char *path, texture_t *out_tex)
                 u32 abgr = color_from_channels(extract_channel_bits(pix_data, cmask.rm, cmask.rsh),
                                                extract_channel_bits(pix_data, cmask.gm, cmask.gsh),
                                                extract_channel_bits(pix_data, cmask.bm, cmask.bsh),
-                                               extract_channel_bits(pix_data, cmask.am, cmask.ash));
+                                               extract_channel_bits(pix_data, cmask.am, cmask.ash) | alpha_override);
                 ((u32 *)out_tex->mem)[dest_offset] = abgr;
             }
         }

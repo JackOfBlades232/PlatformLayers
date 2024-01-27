@@ -12,14 +12,12 @@
 #define BG_NOTEXTURE_DEBUG_COL 0xFF000000
 
 /* @TODO:
- *  Implement texture loading (object textures, background)
-    * Optimize (to 30-40 fps in debug)
-        * Optimize tex_get_pix
-        * Optimize other per-pix funcs
-    * Refactor
- *  Implement ttf bitmap and font rendering (score)
- *  Implement wav loading and mixer (music & sounds)
- *  Cleanup & game loop
+ * Implement ttf bitmap and font rendering (score)
+ * Implement wav loading and mixer (music & sounds)
+ * Optimize (to 30-40 fps in debug)
+    * Remake vector ops to simd
+ * Game loop
+ * Cleanup
  */
 
 /* @BUG-s:
@@ -70,9 +68,9 @@ static brick_t bricks[BRICK_GRID_Y][BRICK_GRID_X] = { 0 };
 static material_t bg_mat = { 0 };
 
 // @TODO: make a more universal cache
-static texture_t ground_tex = { 0 };
+static texture_t player_tex = { 0 };
 static texture_t bricks_tex = { 0 };
-static texture_t sun_tex    = { 0 };
+static texture_t ball_tex    = { 0 };
 static texture_t bg_tex     = { 0 };
 
 static f32 fixed_dt  = 0;
@@ -112,7 +110,6 @@ static void draw_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat
     u32 drawing_pitch = backbuffer->width - (u32)xmax + (u32)xmin;
     u32 *pixel = backbuffer->bitmap_mem + (u32)ymin*backbuffer->width + (u32)xmin;
 
-    // @TODO: fix texture drawing bug (waves) by keeping float coords here
     for (f32 y = ymin; y < ymax; y += 1.f) {
         for (f32 x = xmin; x < xmax; x += 1.f) {
             vec2f_t r_coord = { x - r->x, y - r->y };
@@ -352,16 +349,16 @@ void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    tga_load_texture("../Assets/ground.tga", &ground_tex);
-    tga_load_texture("../Assets/sun.tga", &sun_tex);
+    tga_load_texture("../Assets/player.tga", &player_tex);
+    tga_load_texture("../Assets/ball.tga", &ball_tex);
     tga_load_texture("../Assets/bg.tga", &bg_tex);
     tga_load_texture("../Assets/bricks.tga", &bricks_tex);
 
     // @TEST
     const u32 obj_alpha_mask = 0x5FFFFFFF;
 
-    set_material(&player.mat, obj_alpha_mask & 0xFFFFFFFF, NOTEXTURE_DEBUG_COL, &ground_tex);
-    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, &sun_tex);
+    set_material(&player.mat, obj_alpha_mask & 0xFFFFFFFF, NOTEXTURE_DEBUG_COL, &player_tex);
+    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, &ball_tex);
     set_material(&bg_mat, 0xFFFFFFFF, BG_NOTEXTURE_DEBUG_COL, &bg_tex);
 
     for (u32 y = 0; y < BRICK_GRID_Y; y++)
@@ -382,9 +379,9 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
 
 void game_deinit(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    texture_free_mem(&ground_tex);
+    texture_free_mem(&player_tex);
     texture_free_mem(&bricks_tex);
-    texture_free_mem(&sun_tex);
+    texture_free_mem(&ball_tex);
     texture_free_mem(&bg_tex);
 }
 

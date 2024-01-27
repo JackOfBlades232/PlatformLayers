@@ -537,8 +537,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
                                         0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 
                                         NULL, NULL, h_instance, NULL);
     ASSERT(win32_state.window);
-    // n_cmd_show -- directive to min/max the win
-    ShowWindow(win32_state.window, n_cmd_show);
 
     wasapi_init();
 
@@ -550,6 +548,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
 
     // @NOTE: here the game does the thing
     game_init(&input_state, &backbuffer, &sound_buffer);
+
+    // n_cmd_show -- directive to min/max the win
+    ShowWindow(win32_state.window, n_cmd_show);
 
     MSG msg = { 0 };
 
