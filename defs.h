@@ -19,10 +19,6 @@ typedef int       bool;
 #define true      1
 #define false     0
 
-#if defined(_DEBUG) || defined(DEBUG)
-  #define USE_ASSERTIONS
-#endif
-
 // @TODO: make tweakable?
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
