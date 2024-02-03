@@ -21,6 +21,7 @@ typedef struct texture_tag {
 
     texture_type_t type;
     bool loaded; // @TODO: is this a @HACK?
+    bool has_transparency;
 } texture_t;
 
 // this only allocates/frees mem, loading funcs should be used
@@ -30,9 +31,6 @@ void texture_free_mem(texture_t *tex);
 
 inline u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
 {
-    // @SPEED @TODO: profiling in progress
-    //profiling_start_timed_section("Pix get");
-
     vec2f_t uv = vec2f_div(dst_coord, dst_dim);
     vec2f_t tex_dim = { tex->width, tex->height };
     vec2f_t texcoord = vec2f_mul(uv, tex_dim);
@@ -44,12 +42,9 @@ inline u32 texture_get_pixel(texture_t *tex, vec2f_t dst_coord, vec2f_t dst_dim)
     u32 res;
     if (tex->type == textype_grayscale) {
         u8 scale = ((u8 *)tex->mem)[y*tex->width + x];
-        res = color_from_channel(scale) | 0xFF000000;
+        return color_from_channel(scale) | 0xFF000000;
     } else
-        res = ((u32 *)tex->mem)[y*tex->width + x];
-
-    //profiling_end_and_log_timed_section();
-    return res;
+        return ((u32 *)tex->mem)[y*tex->width + x];
 }
 
 #endif

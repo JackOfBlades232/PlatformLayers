@@ -26,7 +26,6 @@
 
 typedef struct material_tag {
     texture_t *albedo;
-    bool has_albedo_tex;
     u32 col;
 } material_t;
 
@@ -75,57 +74,138 @@ static texture_t bg_tex     = { 0 };
 
 static f32 fixed_dt  = 0;
 
-static inline u32 get_pixel_color(material_t *mat, vec2f_t dst_coord, vec2f_t dst_dim)
+static inline u32 mix_transparent_pix(u32 prev, u32 new)
 {
-    if (mat->has_albedo_tex) {
-        u32 tex_col = texture_get_pixel(mat->albedo, dst_coord, dst_dim);
-        return MUL_COLORS(tex_col, mat->col);
-    } else
-        return mat->col;
+    // @TODO: bug here, when transparent player
+    u32 new_alpha = new >> 24;
+    if (new_alpha == 0xFF)
+        return new;
+
+    u32 tot_alpha = MAX((prev >> 24) + new_alpha, 0xFF);
+    u32 prev_alpha = tot_alpha - new_alpha;
+
+    u32 rgb = add_colors(SCALE_COLOR3(prev, prev_alpha), SCALE_COLOR3(new, new_alpha));
+    return (tot_alpha << 24) | rgb;
 }
 
-static void write_pixel(u32 *dst, u32 col)
-{
-    u32 col_alpha = col >> 24;
-
-    if (col_alpha == 0xFF)
-        *dst = col;
-    else if (col_alpha != 0) {
-        u32 dst_alpha = *dst >> 24;
-        if (dst_alpha + col_alpha > 0xFF)
-            dst_alpha = 0xFF - col_alpha;
-
-        u32 rgb = add_colors(SCALE_COLOR(*dst, dst_alpha), SCALE_COLOR(col, col_alpha)) & 0xFFFFFF;
-        *dst = ((u32)(dst_alpha + col_alpha) << 24) | rgb;
-    }
-}
-
-static void draw_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
-{
-    f32 xmin = MAX(r->x, 0);
-    f32 xmax = MAX(MIN(r->x + r->width, backbuffer->width), 0);
-    f32 ymin = MAX(r->y, 0);
-    f32 ymax = MAX(MIN(r->y + r->height, backbuffer->height), 0);
-
-    u32 drawing_pitch = backbuffer->width - (u32)xmax + (u32)xmin;
+#define DRAW_RECT_INIT() \
+    f32 xmin = MAX(r->x, 0); \
+    f32 xmax = MAX(MIN(r->x + r->width, backbuffer->width), 0); \
+    f32 ymin = MAX(r->y, 0); \
+    f32 ymax = MAX(MIN(r->y + r->height, backbuffer->height), 0); \
+    u32 drawing_pitch = backbuffer->width - (u32)xmax + (u32)xmin; \
     u32 *pixel = backbuffer->bitmap_mem + (u32)ymin*backbuffer->width + (u32)xmin;
 
-    for (f32 y = ymin; y < ymax; y += 1.f) {
-        for (f32 x = xmin; x < xmax; x += 1.f) {
-            vec2f_t r_coord = { x - r->x, y - r->y };
-            u32 col = get_pixel_color(mat, r_coord, r->size);
-            write_pixel(pixel, col);
-            pixel++;
-        }
-        pixel += drawing_pitch;
+#define DRAW_RECT_LOOP_HEAD() \
+    do { for (f32 y = ymin; y < ymax; y += 1.f) { \
+        for (f32 x = xmin; x < xmax; x += 1.f) { \
+            vec2f_t r_coord = { x - r->x, y - r->y }
+
+#define DRAW_RECT_LOOP_TAIL() \
+        } \
+        pixel += drawing_pitch; \
+    } } while (0)
+
+// @TODO: pull out even harder? May gen with macros
+
+static void draw_solid_albedo_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    ASSERT(mat->albedo && !mat->albedo->has_transparency && mat->col == 0xFFFFFFFF);
+    DRAW_RECT_INIT();
+    DRAW_RECT_LOOP_HEAD();
+    {
+        *(pixel++) = texture_get_pixel(mat->albedo, r_coord, r->size);
     }
+    DRAW_RECT_LOOP_TAIL();
 }
 
+static void draw_solid_color_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    ASSERT(!mat->albedo && mat->col >> 24 == 0xFF);
+    DRAW_RECT_INIT();
+    DRAW_RECT_LOOP_HEAD();
+    {
+        *(pixel++) = mat->col;
+    }
+    DRAW_RECT_LOOP_TAIL();
+}
+
+static void draw_solid_mat_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    ASSERT(mat->albedo && !mat->albedo->has_transparency && mat->col != 0xFFFFFFFF && mat->col >> 24 == 0xFF);
+    DRAW_RECT_INIT();
+    DRAW_RECT_LOOP_HEAD();
+    {
+        *(pixel++) = MUL_COLORS(texture_get_pixel(mat->albedo, r_coord, r->size), mat->col);
+    }
+    DRAW_RECT_LOOP_TAIL();
+}
+
+static void draw_transparent_albedo_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    ASSERT(mat->albedo && mat->albedo->has_transparency && mat->col == 0xFFFFFFFF);
+    DRAW_RECT_INIT();
+    DRAW_RECT_LOOP_HEAD();
+    {
+        *(pixel++) = mix_transparent_pix(*pixel, texture_get_pixel(mat->albedo, r_coord, r->size));
+    }
+    DRAW_RECT_LOOP_TAIL();
+}
+
+static void draw_transparent_color_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    ASSERT(!mat->albedo && mat->col >> 24 != 0xFF);
+    DRAW_RECT_INIT();
+    DRAW_RECT_LOOP_HEAD();
+    {
+        *(pixel++) = mix_transparent_pix(*pixel, mat->col);
+    }
+    DRAW_RECT_LOOP_TAIL();
+}
+
+static void draw_transparent_mat_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    ASSERT(mat->albedo && mat->col != 0xFFFFFFFF && (mat->albedo->has_transparency || mat->col >> 24 != 0xFF));
+    DRAW_RECT_INIT();
+    DRAW_RECT_LOOP_HEAD();
+    {
+        *(pixel++) = 
+            mix_transparent_pix(*pixel, MUL_COLORS(texture_get_pixel(mat->albedo, r_coord, r->size), mat->col));
+    }
+    DRAW_RECT_LOOP_TAIL();
+}
+
+static inline void draw_rect(offscreen_buffer_t *backbuffer, rect_t *r, material_t *mat)
+{
+    if (mat->col & 0xFF000000 == 0 || mat->col & 0xFFFFFF == 0)
+        return;
+
+    if (mat->albedo && !mat->albedo->has_transparency && mat->col == 0xFFFFFFFF)
+        draw_solid_albedo_rect(backbuffer, r, mat);
+    else if (!mat->albedo && mat->col >> 24 == 0xFF)
+        draw_solid_color_rect(backbuffer, r, mat);
+    else if (mat->albedo && !mat->albedo->has_transparency && mat->col != 0xFFFFFFFF && mat->col >> 24 == 0xFF)
+        draw_solid_mat_rect(backbuffer, r, mat);
+    else if (mat->albedo && mat->albedo->has_transparency && mat->col == 0xFFFFFFFF)
+        draw_transparent_albedo_rect(backbuffer, r, mat);
+    else if (!mat->albedo && mat->col >> 24 != 0xFF)
+        draw_transparent_color_rect(backbuffer, r, mat);
+    else if (mat->albedo && mat->col != 0xFFFFFFFF && (mat->albedo->has_transparency || mat->col >> 24 != 0xFF))
+        draw_transparent_mat_rect(backbuffer, r, mat);
+
+    // @TODO: check that these are all cases and refac
+}
+
+// @TODO: same opt for ball
 static void draw_circle_strip(offscreen_buffer_t *backbuffer, 
                               f32 min_x, f32 max_x, f32 base_y,
                               rect_t *circle_r, material_t *mat)
 {
     if (base_y < 0 || base_y >= backbuffer->height)
+        return;
+
+    // @TODO: pull out
+    if (mat->col & 0xFF000000 == 0 || mat->col & 0xFFFFFF == 0)
         return;
 
     min_x = MAX(min_x, 0);
@@ -134,9 +214,16 @@ static void draw_circle_strip(offscreen_buffer_t *backbuffer,
     u32 *pixel = backbuffer->bitmap_mem + (u32)base_y*backbuffer->width + (u32)min_x;
     for (u32 x = min_x; x < max_x; x++) {
         vec2f_t r_coord = { x - circle_r->x, base_y - circle_r->y };
+
         // @TODO: pull out
-        u32 col = get_pixel_color(mat, r_coord, circle_r->size);
-        write_pixel(pixel++, col);
+        u32 col;
+        if (mat->albedo) {
+            u32 tex_col = texture_get_pixel(mat->albedo, r_coord, circle_r->size);
+            col = mat->col == 0xFFFFFFFF ? tex_col : MUL_COLORS(tex_col, mat->col);
+        } else
+            col = mat->col;
+
+        *(pixel++) = mix_transparent_pix(*pixel, col);
     }
 }
 
@@ -285,6 +372,7 @@ static void reset_game_entities(offscreen_buffer_t *backbuffer)
         }
 }
 
+// @TODO: there are still bugs here! check corners in dbg mode
 static void resolve_player_to_ball_collision()
 {
     // @HACK: this is physically incorrect
@@ -335,14 +423,13 @@ static void draw(offscreen_buffer_t *backbuffer)
 void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
 {
     if (!tex) {
-        mat->has_albedo_tex = false;
+        mat->albedo = NULL;
         mat->col = col;
     } else if (tex->loaded) {
         mat->albedo = tex;
-        mat->has_albedo_tex = true;
         mat->col = col;
     } else {
-        mat->has_albedo_tex = false;
+        mat->albedo = NULL;
         mat->col = dbg_col;
     }
 }
@@ -354,11 +441,8 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
     tga_load_texture("bg.tga", &bg_tex);
     tga_load_texture("bricks.tga", &bricks_tex);
 
-    // @TEST
-    const u32 obj_alpha_mask = 0x5FFFFFFF;
-
-    set_material(&player.mat, obj_alpha_mask & 0xFFFFFFFF, NOTEXTURE_DEBUG_COL, &player_tex);
-    set_material(&ball.mat, obj_alpha_mask & 0xFFFFFF00, NOTEXTURE_DEBUG_COL, &ball_tex);
+    set_material(&player.mat, 0xDFFFFFFF, NOTEXTURE_DEBUG_COL, &player_tex);
+    set_material(&ball.mat, 0x6FFFFF00, NOTEXTURE_DEBUG_COL, &ball_tex);
     set_material(&bg_mat, 0xFFFFFFFF, BG_NOTEXTURE_DEBUG_COL, &bg_tex);
 
     for (u32 y = 0; y < BRICK_GRID_Y; y++)
@@ -367,7 +451,7 @@ void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffe
 
             f32 coeff = (f32)y/(BRICK_GRID_Y-1);
             set_material(&brick->mat, 
-                         (obj_alpha_mask & 0xFF000000) | (u32)(coeff*0xFF) << 16 | (u32)((1.f-coeff)*0xFF) << 8, 
+                         0xCF000000 | (u32)(coeff*0xFF) << 16 | (u32)((1.f-coeff)*0xFF) << 8, 
                          NOTEXTURE_DEBUG_COL,
                          &bricks_tex);
 

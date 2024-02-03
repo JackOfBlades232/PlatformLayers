@@ -6,12 +6,14 @@
 
 // @TODO: try float colors
 
-// @TODO: add more functions
+// @TODO: add more functions, add more color3 funcs?
 #if USE_FAST_COLOR_FUNCTIONS
   #define SCALE_COLOR(_in, _scale) scale_color_fast(_in, _scale)
+  #define SCALE_COLOR3(_in, _scale) scale_color3_fast(_in, _scale)
   #define MUL_COLORS(_in, _scale) mul_colors_fast(_in, _scale)
 #else
   #define SCALE_COLOR(_in, _scale) scale_color(_in, _scale)
+  #define SCALE_COLOR3(_in, _scale) scale_color3(_in, _scale)
   #define MUL_COLORS(_in, _scale) mul_colors(_in, _scale)
 #endif
 
@@ -59,6 +61,23 @@ inline u32 scale_color_fast(u32 in, u32 scale)
                                scale_color_channel_fast((in >> 8) & 0xFF, scale),
                                scale_color_channel_fast((in >> 16) & 0xFF, scale),
                                scale_color_channel_fast(in >> 24, scale));
+}
+
+inline u32 scale_color3(u32 in, u8 scale)
+{
+    return color_from_channels(scale_color_channel(in & 0xFF, scale),
+                               scale_color_channel((in >> 8) & 0xFF, scale),
+                               scale_color_channel((in >> 16) & 0xFF, scale),
+                               0);
+}
+
+inline u32 scale_color3_fast(u32 in, u32 scale)
+{
+    // @TODO: as this the fast version, may make itself faster
+    return color_from_channels(scale_color_channel_fast(in & 0xFF, scale),
+                               scale_color_channel_fast((in >> 8) & 0xFF, scale),
+                               scale_color_channel_fast((in >> 16) & 0xFF, scale),
+                               0);
 }
 
 inline u32 mul_colors(u32 in, u32 scale)
