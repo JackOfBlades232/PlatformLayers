@@ -1,7 +1,8 @@
 @echo off
 @REM pushd build\Windows TODO: figure out paths
-pushd build
 @REM cl %COMPILER_FLAGS% ..\..\Windows\*.c ..\..\GameLibs\*.c ..\..\TestGames\game_%GAME%.c user32.lib gdi32.lib ole32.lib
+
+pushd build
 
 @REM TODO: set build types well
 set COMMON_COMPILER_FLAGS=/MP /TC /GM-

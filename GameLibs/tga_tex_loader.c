@@ -220,6 +220,9 @@ void tga_load_texture(const char *path, texture_t *out_tex)
                                                extract_channel_bits(pix_data, cmask.bm, cmask.bsh),
                                                extract_channel_bits(pix_data, cmask.am, cmask.ash) | alpha_override);
                 ((u32 *)out_tex->mem)[dest_offset] = abgr;
+
+                if (abgr >> 24 != 0xFF)
+                    out_tex->has_transparency = true;
             }
         }
 

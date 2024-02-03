@@ -13,4 +13,5 @@ void texture_free_mem(texture_t *tex)
     if (tex->mem)
         os_free_mem(&tex->alloc);
     tex->loaded = false;
+    tex->has_transparency = false;
 }
