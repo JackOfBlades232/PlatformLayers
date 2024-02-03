@@ -70,7 +70,7 @@ static material_t bg_mat = { 0 };
 // @TODO: make a more universal cache
 static texture_t player_tex = { 0 };
 static texture_t bricks_tex = { 0 };
-static texture_t ball_tex    = { 0 };
+static texture_t ball_tex   = { 0 };
 static texture_t bg_tex     = { 0 };
 
 static f32 fixed_dt  = 0;
@@ -349,10 +349,10 @@ void set_material(material_t *mat, u32 col, u32 dbg_col, texture_t *tex)
 
 void game_init(input_state_t *input, offscreen_buffer_t *backbuffer, sound_buffer_t *sound)
 {
-    tga_load_texture("../Assets/player.tga", &player_tex);
-    tga_load_texture("../Assets/ball.tga", &ball_tex);
-    tga_load_texture("../Assets/bg.tga", &bg_tex);
-    tga_load_texture("../Assets/bricks.tga", &bricks_tex);
+    tga_load_texture("player.tga", &player_tex);
+    tga_load_texture("ball.tga", &ball_tex);
+    tga_load_texture("bg.tga", &bg_tex);
+    tga_load_texture("bricks.tga", &bricks_tex);
 
     // @TEST
     const u32 obj_alpha_mask = 0x5FFFFFFF;

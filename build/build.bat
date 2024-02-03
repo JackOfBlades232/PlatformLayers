@@ -1,10 +1,28 @@
 @echo off
-@REM pushd build\Windows
-@REM cl %COMPILER_FLAGS% ..\..\Windows\*.c ..\..\GameLibs\*.c ..\..\TestGames\game_%GAME%.c user32.lib gdi32.lib ole32.lib
+@REM pushd build\Windows TODO: figure out paths
 pushd build
-@REM set COMPILER_FLAGS=/Zi /O2 /Oi /Ob3 /Ot
-set COMPILER_FLAGS=/Zi /D USE_ASSERTIONS=1
+@REM cl %COMPILER_FLAGS% ..\..\Windows\*.c ..\..\GameLibs\*.c ..\..\TestGames\game_%GAME%.c user32.lib gdi32.lib ole32.lib
+
+@REM TODO: set build types well
+set COMMON_COMPILER_FLAGS=/MP /TC /GM-
+set COMMON_LINKER_FLAGS=/INCREMENTAL:NO
+
+@REM NOTE: Debug build
+set PREPROCESSOR_DEFINES=/D USE_ASSERTIONS=1 /D USE_FAST_COLOR_FUNCTIONS=1 /D USE_LOGGING=1
+set COMPILER_FLAGS=/Zi /Ob1 %PREPROCESSOR_DEFINES%
+set LINKER_FLAGS=%COMMON_LINKER_FLAGS%
+
+@REM NOTE: Dev build
+@REM set PREPROCESSOR_DEFINES=/D USE_ASSERTIONS=1 /D USE_FAST_COLOR_FUNCTIONS=1 /D USE_LOGGING=1
+@REM set COMPILER_FLAGS=/Zi /O2 /Ob3 %PREPROCESSOR_DEFINES%
+@REM set LINKER_FLAGS=%COMMON_LINKER_FLAGS%
+
+@REM NOTE: Release build
+@REM set PREPROCESSOR_DEFINES=/D USE_ASSERTIONS=0 /D USE_FAST_COLOR_FUNCTIONS=1 /D USE_LOGGING=0
+@REM set COMPILER_FLAGS=/O2 /Ob3 /GL %PREPROCESSOR_DEFINES%
+@REM set LINKER_FLAGS=%COMMON_LINKER_FLAGS%
+
 set GAME=jailbreak
-cl %COMPILER_FLAGS% ..\Windows\*.c ..\GameLibs\*.c ..\TestGames\game_%GAME%.c user32.lib gdi32.lib ole32.lib
+cl %COMPILER_FLAGS% ..\Windows\*.c ..\GameLibs\*.c ..\TestGames\game_%GAME%.c user32.lib gdi32.lib ole32.lib /link %LINKER_FLAGS%
 popd
 @echo on

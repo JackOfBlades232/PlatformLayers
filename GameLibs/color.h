@@ -6,11 +6,8 @@
 
 // @TODO: try float colors
 
-// @TODO: automate in build
-#define USE_FAST_COLOR_FUNCTIONS 1
-
 // @TODO: add more functions
-#if defined(USE_FAST_COLOR_FUNCTIONS) && USE_FAST_COLOR_FUNCTIONS
+#if USE_FAST_COLOR_FUNCTIONS
   #define SCALE_COLOR(_in, _scale) scale_color_fast(_in, _scale)
   #define MUL_COLORS(_in, _scale) mul_colors_fast(_in, _scale)
 #else

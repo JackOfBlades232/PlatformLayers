@@ -28,10 +28,16 @@
  *  ...
  */
 
+#define OS_INTERNAL_LOG(_fmt, ...) LOG("[OS] " _fmt, ##__VA_ARGS__)
+#define OS_INTERNAL_CHECK_RES(_expr) do { if (!(_expr)) PANIC; } while (0)
+// @TODO: better os assertions, with message box in win32
+
 typedef struct win32_state_tag {
     HWND window;
     HBITMAP bitmap;
     BITMAPINFO bmi;
+
+    HANDLE console;
 
     u64 frame_start_counter;
     u64 perf_counter_freq;
@@ -90,7 +96,10 @@ void os_debug_printf(const char* format, ...)
     *(p++) = '\n';
     *p = '\0';
 
-    OutputDebugStringA(buf);
+    if (win32_state.console)
+        WriteConsoleA(win32_state.console, buf, nchars+2, NULL, NULL);
+    else
+        OutputDebugStringA(buf);
 }
 
 allocated_mem_t os_allocate_mem(u32 size)
@@ -359,13 +368,7 @@ LRESULT CALLBACK win32_window_proc(HWND   hwnd,
 
 /// WASAPI Audio ///
 
-// @TODO: implement different error checking for init -- this is needed for client too
-// @HACK
-#ifdef USE_ASSERTIONS
-  #define WASAPI_CHECK_RES(_expr) ASSERT((_expr) == S_OK)
-#else
-  #define WASAPI_CHECK_RES(_expr) _expr
-#endif
+#define WASAPI_CHECK_RES(_expr) OS_INTERNAL_CHECK_RES((_expr) == S_OK)
 
 static void wasapi_init()
 {
@@ -538,6 +541,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
                                         NULL, NULL, h_instance, NULL);
     ASSERT(win32_state.window);
 
+    // @NOTE: use console if parent process has one or if this one is already connected (ERROR_ACCESS_DENIED) or has it
+    // @TODO: should I check error code again?
+    // @HUH: i may just alloc a console in all cases
+    if (AttachConsole(ATTACH_PARENT_PROCESS) ||
+        GetLastError() == ERROR_ACCESS_DENIED ||
+        AttachConsole(GetCurrentProcessId()))
+    {
+        win32_state.console = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (win32_state.console == INVALID_HANDLE_VALUE)
+            win32_state.console = NULL;
+    }
+    if (!win32_state.console)
+        OS_INTERNAL_LOG("No attached console stdout, output will be redirected to the debugger.");
+
     wasapi_init();
 
     sound_buffer.samples_per_sec = wasapi_state.samples_per_sec;
@@ -579,7 +596,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE     h_instance,
             win32_state.frame_start_counter = end_counter.QuadPart;
             win32_state.frame_start_clocks  = cur_clocks;
 
-            os_debug_printf("[OS] %.2f ms/frame, %d fps, %lu clocks/frame\n",
+            OS_INTERNAL_LOG("%.2f ms/frame, %d fps, %lu clocks/frame",
                             dt * 1e3, (u32)(1.0f/dt), dclocks);
 
             for (u32 i = 0; i < INPUT_KEY_MAX; i++)

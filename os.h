@@ -153,9 +153,9 @@ inline bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
     return true;
 }
 
-#define PANIC do { *((u8 *) NULL) = 0; } while (0)
+#define PANIC do { *((u8 *)NULL) = 0; } while (0)
 
-#ifdef USE_ASSERTIONS
+#if USE_ASSERTIONS
   
   #define ASSERT(_e) if(!(_e)) { os_debug_printf("Assertion (" #_e ") failed at %s:%d\n", __FILE__, __LINE__); PANIC; }
   #define ASSERTF(_e, _fmt, ...) if(!(_e)) { os_debug_printf("(%s:%d) " _fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); PANIC; }
@@ -169,6 +169,17 @@ inline bool structs_are_equal(u8 *s1, u8 *s2, size_t size)
   #define ASSERT(_e)
   #define ASSERTF(_e, _fmt, ...)
   #define STATIC_ASSERT(_e)
+
+#endif
+
+// @TODO: different levels of logging
+#if USE_LOGGING
+
+  #define LOG(_fmt, ...) os_debug_printf(_fmt, ##__VA_ARGS__);
+
+#else
+
+  #define LOG(_fmt, ...)
 
 #endif
 
