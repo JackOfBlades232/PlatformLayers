@@ -17,6 +17,11 @@
   #define MUL_COLORS(_in, _scale) mul_colors(_in, _scale)
 #endif
 
+#define COLOR_RGB(_col) ((_col) & 0xFFFFFF)
+#define COLOR_ALPHA(_col) ((_col) >> 24)
+#define COLOR_IS_TRANSPARENT(_col) (COLOR_ALPHA(_col) != 0xFF)
+#define COLOR_IS_WHITE(_col) ((_col) == 0xFFFFFFFF)
+
 inline u8 scale_color_channel(u8 in, u8 scale)
 {
     return scale == 0 ? 0 : (u16)in * scale / 0xFF;
